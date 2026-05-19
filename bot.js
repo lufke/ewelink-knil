@@ -160,9 +160,10 @@ bot.command('luces', async ctx => {
         // Agregar equipos Tuya
         equiposTuya.forEach(e => {
             const estadoIcon = e.estado === 'ON' ? '🟡' : '⚫';
+            const name = e.nombre || e.name || e.id;
             buttons.push([
-                Markup.button.callback(`💡 [Tuya] ${e.nombre} (ON)`, `tuya:${e.id}:on`),
-                Markup.button.callback(`OFF`, `tuya:${e.id}:off`)
+                Markup.button.callback(`💡 [Tuya] ${name} (ON)`, `tuya:${e.botId}:on`),
+                Markup.button.callback(`OFF`, `tuya:${e.botId}:off`)
             ]);
         });
 
