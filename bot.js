@@ -2,6 +2,7 @@ import dotenv from 'dotenv'
 import { Telegraf, Input, Markup } from 'telegraf';
 import ewelinkManager from './ewelink-manager.js';
 import tasmotaManager from './tasmota-manager.js';
+import ngrokManager from './ngrok-manager.js';
 import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
@@ -18,6 +19,10 @@ console.log(`✅ eWelink Manager reresultado: ${ewelinkResult}`);
 console.log('⏳ Pasó 2: Iniciando TasmotaManager...');
 const tasmotaResult = await tasmotaManager.init();
 console.log(`✅ Tasmota Manager reresultado: ${tasmotaResult}`);
+
+console.log('⏳ Pasó 3: Iniciando NgrokManager...');
+const ngrokResult = await ngrokManager.init();
+console.log(`✅ Ngrok Manager resultado: ${ngrokResult}`);
 
 if (!process.env.BOT_TOKEN) {
     console.error('❌ ERROR: BOT_TOKEN no encontrado en el archivo .env');
@@ -135,7 +140,10 @@ bot.command('luces', async ctx => {
 
         // Agregar equipos Tasmota
         equiposTasmota.forEach(e => {
-            const estadoIcon = e.online ? '🟢' : '🔴';
+            let estadoIcon = '🔴'; // offline
+            if (e.online) {
+                estadoIcon = e.estado === 'ON' ? '🟡' : '⚫';
+            }
             buttons.push([
                 Markup.button.callback(`${estadoIcon} ${e.nombre} (ON)`, `tasmota:${e.topic}:on`),
                 Markup.button.callback(`OFF`, `tasmota:${e.topic}:off`)
@@ -151,8 +159,10 @@ bot.command('luces', async ctx => {
 });
 
 bot.command('refresh', async ctx => {
-    ctx.reply('🔄 Actualizando cache eWelink y re-escaneando Tasmota...');
+    ctx.reply('🔄 Actualizando cache eWelink y solicitando estado a Tasmota...');
     const result = await ewelinkManager.refreshCache();
+    
+    tasmotaManager.requestRefresh();
 
     const tasmotaCount = tasmotaManager.getEquipos().length;
 

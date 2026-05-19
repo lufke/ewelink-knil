@@ -1,6 +1,9 @@
 import eWelink from "@pipechela/ewelink-api";
 import Zeroconf from '@pipechela/ewelink-api/src/classes/Zeroconf.js';
-import { APP_ID, APP_SECRET, EWELINK_EMAIL, EWELINK_PASSWORD } from "./conifg.js";
+import dotenv from 'dotenv';
+dotenv.config();
+
+const { APP_ID, APP_SECRET, EWELINK_EMAIL, EWELINK_PASSWORD } = process.env;
 import fs from 'fs/promises';
 import os from 'os';
 

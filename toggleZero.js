@@ -1,6 +1,9 @@
 import Zeroconf from '@pipechela/ewelink-api/src/classes/Zeroconf.js'
 import eWelink from "@pipechela/ewelink-api";
-import { APP_ID, APP_SECRET, EWELINK_EMAIL, EWELINK_PASSWORD } from "./conifg.js";
+import dotenv from 'dotenv';
+dotenv.config();
+
+const { APP_ID, APP_SECRET, EWELINK_EMAIL, EWELINK_PASSWORD } = process.env;
 
 
 const devices = await Zeroconf.loadCachedDevices()

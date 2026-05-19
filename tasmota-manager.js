@@ -22,6 +22,9 @@ class TasmotaManager {
                 this.client.subscribe('tele/+/LWT');
                 this.client.subscribe('stat/+/POWER');
                 this.client.subscribe('tele/+/STATE');
+
+                // Solicitar estado actual de los tasmotas
+                this.requestRefresh();
             });
 
             this.client.on('message', (topic, message) => {
@@ -66,16 +69,25 @@ class TasmotaManager {
             device.online = (message.toLowerCase() === 'online');
         } else if (topic.endsWith('POWER')) {
             device.estado = message.toUpperCase(); // ON u OFF
+            device.online = true; // Si envía POWER, está online
             console.log(`Tasmota [${deviceTopic}] Estado actualizado: ${device.estado}`);
         } else if (topic.endsWith('STATE')) {
             try {
                 const data = JSON.parse(message);
                 if (data.POWER) {
                     device.estado = data.POWER;
+                    device.online = true; // Si envía STATE, está online
                 }
             } catch (e) {
                 // No es JSON o no tiene POWER
             }
+        }
+    }
+
+    requestRefresh() {
+        if (this.client) {
+            console.log('TasmotaManager: Solicitando estado actual de los dispositivos...');
+            this.client.publish('cmnd/tasmotas/POWER', '');
         }
     }
 

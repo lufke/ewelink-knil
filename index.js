@@ -1,6 +1,9 @@
 // import eWelink from "ewelink-api";
 import ewelink from '@pipechela/ewelink-api';
-import { APP_ID, APP_SECRET, EWELINK_EMAIL, EWELINK_PASSWORD } from './conifg.js';
+import dotenv from 'dotenv';
+dotenv.config();
+
+const { APP_ID, APP_SECRET, EWELINK_EMAIL, EWELINK_PASSWORD } = process.env;
 
 const ewelinkUser = {
     accessToken: '',

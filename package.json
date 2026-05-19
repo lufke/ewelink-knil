@@ -15,6 +15,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ngrok/ngrok": "^1.7.0",
     "@pipechela/ewelink-api": "^1.0.0",
     "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^16.4.5",
