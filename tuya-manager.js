@@ -57,7 +57,7 @@ class TuyaManager {
             id: devConfig.id,
             key: devConfig.key,
             ip: devConfig.ip || undefined, // si está definida la IP acelera la conexión
-            version: devConfig.version || '3.3',
+            version: devConfig.version || '3.4',
             issueGetOnConnect: false
         });
 
@@ -67,14 +67,14 @@ class TuyaManager {
                 console.log(`🔍 [TuyaManager] Buscando ${name} por UDP en la red local (timeout 10s)...`);
                 await device.find({ timeout: 10 });
             }
-            
+
             await device.connect();
 
             const value = state.toLowerCase() === 'on';
-            
+
             // Enviamos el comando de encendido/apagado al DPS correspondiente (por ejemplo: 1, 2, 3...)
             await device.set({ dps: dps, set: value });
-            
+
             await device.disconnect();
 
             // Actualizar el estado local
@@ -85,7 +85,7 @@ class TuyaManager {
             console.error(`❌ [TuyaManager] Error controlando dispositivo ${name}:`, err.message);
             try {
                 await device.disconnect();
-            } catch (e) {}
+            } catch (e) { }
             return { status: 'error', error: err.message };
         }
     }

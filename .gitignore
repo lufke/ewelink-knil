@@ -3,5 +3,4 @@ node_modules/
 arp-table.json
 devices-cache.json
 *.log
-telegram-bot-knil/
 tuya-devices.json
