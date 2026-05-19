@@ -246,9 +246,9 @@ bot.launch()
 // Manejo suave de cierre
 process.once('SIGINT', () => {
     console.log('Bot apagándose (SIGINT)...');
-    bot.stop('SIGINT');
+    try { bot.stop('SIGINT'); } catch (e) {}
 });
 process.once('SIGTERM', () => {
     console.log('Bot apagándose (SIGTERM)...');
-    bot.stop('SIGTERM');
+    try { bot.stop('SIGTERM'); } catch (e) {}
 });
