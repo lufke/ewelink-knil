@@ -3,6 +3,7 @@ import { Telegraf, Input, Markup } from 'telegraf';
 import ewelinkManager from './ewelink-manager.js';
 import tasmotaManager from './tasmota-manager.js';
 import ngrokManager from './ngrok-manager.js';
+import tuyaManager from './tuya-manager.js';
 import { createClient } from "@supabase/supabase-js";
 import ws from 'ws';
 
@@ -128,9 +129,10 @@ bot.command('luces', async ctx => {
     try {
         const equiposEwelink = ewelinkManager.getEquipos();
         const equiposTasmota = tasmotaManager.getEquipos();
+        const equiposTuya = tuyaManager.getEquipos();
 
-        if (equiposEwelink.length === 0 && equiposTasmota.length === 0) {
-            return ctx.reply('No se detectan equipos. Usa /refresh para eWelink o espera a que Tasmota reporte por MQTT.');
+        if (equiposEwelink.length === 0 && equiposTasmota.length === 0 && equiposTuya.length === 0) {
+            return ctx.reply('No se detectan equipos. Usa /refresh para eWelink o espera a que Tasmota/Tuya se configuren.');
         }
 
         const buttons = [];
@@ -155,10 +157,19 @@ bot.command('luces', async ctx => {
             ]);
         });
 
+        // Agregar equipos Tuya
+        equiposTuya.forEach(e => {
+            const estadoIcon = e.estado === 'ON' ? '🟡' : '⚫';
+            buttons.push([
+                Markup.button.callback(`💡 [Tuya] ${e.nombre} (ON)`, `tuya:${e.id}:on`),
+                Markup.button.callback(`OFF`, `tuya:${e.id}:off`)
+            ]);
+        });
+
         await ctx.reply('Selecciona una acción:', Markup.inlineKeyboard(buttons));
 
     } catch (e) {
-        console.error('Error en comando /ewelink:', e);
+        console.error('Error en comando /luces:', e);
         ctx.reply('Ocurrió un error al listar los equipos.');
     }
 });
@@ -236,6 +247,35 @@ bot.action(/^tasmota:(.+):(\w+)$/, async (ctx) => {
             await ctx.reply(`❌ Error de conexión MQTT con Tasmota: ${error.message}`);
         } catch (innerError) {
             console.error('Error al enviar respuesta de error Tasmota:', innerError);
+        }
+    }
+});
+
+// Acción para equipos Tuya
+bot.action(/^tuya:(.+):(\w+)$/, async (ctx) => {
+    const deviceId = ctx.match[1];
+    const state = ctx.match[2];
+    console.log(`[TUYA] Procesando: ${deviceId} -> ${state}`);
+
+    const equipos = tuyaManager.getEquipos();
+    const equipo = equipos.find(d => d.id === deviceId);
+
+    try {
+        await ctx.answerCbQuery(`Enviando ${state.toUpperCase()} a ${equipo ? equipo.nombre : deviceId}...`);
+        const status = await tuyaManager.setPowerState(deviceId, state);
+
+        if (status.status === 'ok') {
+            await ctx.reply(`✅ Tuya [${equipo ? equipo.nombre : deviceId}] ahora está ${state.toUpperCase()}`);
+        } else {
+            await ctx.reply(`⚠️ Error Tuya: ${status.error}`);
+        }
+    } catch (error) {
+        console.error('Error en acción Tuya:', error);
+        try {
+            await ctx.answerCbQuery('Error en la conexión local').catch(() => { });
+            await ctx.reply(`❌ Error de conexión local con Tuya: ${error.message}`);
+        } catch (innerError) {
+            console.error('Error al enviar respuesta de error Tuya:', innerError);
         }
     }
 });
