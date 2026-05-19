@@ -4,12 +4,17 @@ import ewelinkManager from './ewelink-manager.js';
 import tasmotaManager from './tasmota-manager.js';
 import ngrokManager from './ngrok-manager.js';
 import { createClient } from "@supabase/supabase-js";
+import ws from 'ws';
 
 dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_API_KEY || '';
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey, {
+    realtime: {
+        transport: ws,
+    }
+}) : null;
 
 
 console.log('⏳ Pasó 1: Iniciando EwelinkManager...');

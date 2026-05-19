@@ -20,7 +20,8 @@
     "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^16.4.5",
     "mqtt": "^5.14.1",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.7"
