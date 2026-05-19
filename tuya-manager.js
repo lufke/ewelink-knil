@@ -57,12 +57,17 @@ class TuyaManager {
             id: devConfig.id,
             key: devConfig.key,
             ip: devConfig.ip || undefined, // si está definida la IP acelera la conexión
+            version: devConfig.version || '3.3',
             issueGetOnConnect: false
         });
 
         try {
-            // Buscar en red local (tiempo de espera de 3 segundos)
-            await device.find({ timeout: 3 });
+            // Si no tiene IP, lo buscamos en la red local con un timeout más holgado (10 segundos)
+            if (!devConfig.ip) {
+                console.log(`🔍 [TuyaManager] Buscando ${name} por UDP en la red local (timeout 10s)...`);
+                await device.find({ timeout: 10 });
+            }
+            
             await device.connect();
 
             const value = state.toLowerCase() === 'on';
