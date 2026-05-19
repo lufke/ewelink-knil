@@ -1,0 +1,14 @@
+[
+    {
+        "id": "tasmota_switch_1",
+        "nombre": "Luz Bodega",
+        "topic": "tasmota_bodega",
+        "tipo": "switch"
+    },
+    {
+        "id": "tasmota_plug_1",
+        "nombre": "Enchufe Tasmota",
+        "topic": "tasmota_enchufe",
+        "tipo": "plug"
+    }
+]

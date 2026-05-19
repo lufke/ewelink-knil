@@ -1,0 +1,76 @@
+ÔÅ│ Pas├│ 1: Iniciando EwelinkManager...
+[EwelinkManager] Cargando datos locales...
+(node:22100) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[EwelinkManager] Cache cargado: 9 equipos.
+[EwelinkManager] Tabla ARP cargada (29 entradas).
+[EwelinkManager] Autenticando en eWelink Cloud...
+[EwelinkManager] Ô£à Autenticado en Cloud (Fallback listo).
+[EwelinkManager] Iniciando escaneo ARP en segundo plano...
+Ô£à eWelink Manager reresultado: true
+ÔÅ│ Pas├│ 2: Iniciando TasmotaManager...
+TasmotaManager: Conectando a mqtt://knil.local:1883...
+Ô£à Tasmota Manager reresultado: true
+Creando instancia de Telegraf...
+Verificando token con getMe()...
+Error: Command failed: ifconfig
+"ifconfig" no se reconoce como un comando interno o externo,
+programa o archivo por lotes ejecutable.
+
+    at genericNodeError (node:internal/errors:983:15)
+    at wrappedFn (node:internal/errors:537:14)
+    at ChildProcess.exithandler (node:child_process:421:12)
+    at ChildProcess.emit (node:events:520:28)
+    at maybeClose (node:internal/child_process:1105:16)
+    at Socket.<anonymous> (node:internal/child_process:457:11)
+    at Socket.emit (node:events:520:28)
+    at Pipe.<anonymous> (node:net:338:12) {
+  code: 1,
+  killed: false,
+  signal: null,
+  cmd: 'ifconfig'
+}
+[EwelinkManager] ÔÜá´©Å Fall├│ escaneo ARP din├ímico: Command failed: ifconfig
+"ifconfig" no se reconoce como un comando interno o externo,
+programa o archivo por lotes ejecutable.
+
+TasmotaManager: Conectado y escuchando mensajes para auto-descubrimiento...
+Tasmota detectado din├ímicamente: catarata
+Tasmota detectado din├ímicamente: escala_abajo
+Tasmota detectado din├ímicamente: contenedor
+Tasmota detectado din├ímicamente: andres_pieza
+Tasmota detectado din├ímicamente: comedero
+Tasmota detectado din├ímicamente: terraza_techo
+Tasmota detectado din├ímicamente: quincho
+Tasmota detectado din├ímicamente: oficina
+Ô£à Token v├ílido. Bot: @PipeChelaBot (ID: 165600542)
+[TASMOTA] Procesando: oficina -> on
+[TasmotaManager] setPowerState: oficina -> on
+[TasmotaManager] Publicando en cmnd/oficina/POWER: ON
+[TasmotaManager] Publicado con ├®xito en cmnd/oficina/POWER
+Tasmota [oficina] Estado actualizado: ON
+[DEBUG] Click detectado: tasmota:oficina:on (procesado en 689ms)
+[TASMOTA] Procesando: oficina -> off
+[TasmotaManager] setPowerState: oficina -> off
+[TasmotaManager] Publicando en cmnd/oficina/POWER: OFF
+[TasmotaManager] Publicado con ├®xito en cmnd/oficina/POWER
+Tasmota [oficina] Estado actualizado: OFF
+[DEBUG] Click detectado: tasmota:oficina:off (procesado en 679ms)
+[EWELINK] Procesando: 1000da4a32 -> on
+[EwelinkManager] Comando: COMEDOR -> on (IP: 192.168.1.17)
+[TELEGRAF ERROR] en callback_query: TimeoutError: Promise timed out after 90000 milliseconds
+    at Timeout._onTimeout (C:\codigo\node\ewelink-knil\node_modules\p-timeout\index.js:39:64)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)
+[EwelinkManager] ÔÜá´©Å LAN fallo (request to http://192.168.1.17:8081/zeroconf/switch failed, reason: socket hang up). Intentando Cloud...
+[EwelinkManager] Ô£à Control CLOUD exitoso para 1000da4a32
+[DEBUG] Click detectado: ewelink:1000da4a32:on (procesado en 303887ms)
+[EWELINK] Procesando: 1000da4a32 -> off
+[EwelinkManager] Comando: COMEDOR -> off (IP: 192.168.1.17)
+[TELEGRAF ERROR] en callback_query: TimeoutError: Promise timed out after 90000 milliseconds
+    at Timeout._onTimeout (C:\codigo\node\ewelink-knil\node_modules\p-timeout\index.js:39:64)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)
+[EwelinkManager] ÔÜá´©Å LAN fallo (request to http://192.168.1.17:8081/zeroconf/switch failed, reason: socket hang up). Intentando Cloud...
+[EwelinkManager] Ô£à Control CLOUD exitoso para 1000da4a32
+[DEBUG] Click detectado: ewelink:1000da4a32:off (procesado en 303075ms)

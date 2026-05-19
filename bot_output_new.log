@@ -1,0 +1,93 @@
+ÔÅ│ Pas├│ 1: Iniciando EwelinkManager...
+[EwelinkManager] Cargando cache de dispositivos...
+(node:7012) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[EwelinkManager] Cache cargado: 9 equipos.
+[EwelinkManager] Cargando tabla ARP...
+[EwelinkManager] Tabla ARP cargada.
+[EwelinkManager] Managers (Local + Cloud) inicializados.
+Ô£à eWelink Manager reresultado: true
+ÔÅ│ Pas├│ 2: Iniciando TasmotaManager...
+TasmotaManager: Conectando a mqtt://knil.local:1883...
+Ô£à Tasmota Manager reresultado: true
+Creando instancia de Telegraf...
+Verificando token con getMe()...
+TasmotaManager: Conectado y escuchando mensajes para auto-descubrimiento...
+Tasmota detectado din├ímicamente: catarata
+Tasmota detectado din├ímicamente: escala_abajo
+Tasmota detectado din├ímicamente: contenedor
+Tasmota detectado din├ímicamente: andres_pieza
+Tasmota detectado din├ímicamente: comedero
+Tasmota detectado din├ímicamente: terraza_techo
+Tasmota detectado din├ímicamente: quincho
+Tasmota detectado din├ímicamente: oficina
+Ô£à Token v├ílido. Bot: @PipeChelaBot (ID: 165600542)
+[TASMOTA] Procesando: oficina -> on
+[TasmotaManager] setPowerState: oficina -> on
+[TasmotaManager] Publicando en cmnd/oficina/POWER: ON
+[TasmotaManager] Publicado con ├®xito en cmnd/oficina/POWER
+Tasmota [oficina] Estado actualizado: ON
+[DEBUG] Click detectado: tasmota:oficina:on (procesado en 675ms)
+[TASMOTA] Procesando: oficina -> off
+[TasmotaManager] setPowerState: oficina -> off
+[TasmotaManager] Publicando en cmnd/oficina/POWER: OFF
+[TasmotaManager] Publicado con ├®xito en cmnd/oficina/POWER
+Tasmota [oficina] Estado actualizado: OFF
+[DEBUG] Click detectado: tasmota:oficina:off (procesado en 731ms)
+[EWELINK] Procesando: 1000d9b769 -> on
+[EwelinkManager] Intento de comando: 1000d9b769 -> on
+[EwelinkManager] Probando v├¡a LAN para 1000d9b769...
+[TELEGRAF ERROR] en callback_query: TimeoutError: Promise timed out after 90000 milliseconds
+    at Timeout._onTimeout (C:\codigo\node\ewelink-knil\node_modules\p-timeout\index.js:39:64)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)
+[EWELINK] Procesando: 1000da4a32 -> on
+[EwelinkManager] Intento de comando: 1000da4a32 -> on
+[EwelinkManager] Probando v├¡a LAN para 1000da4a32...
+[EwelinkManager] ÔÜá´©Å Fallo LAN para 1000da4a32: request to http://192.168.1.17:8081/zeroconf/switch failed, reason: read ECONNRESET
+Error en acci├│n eWelink: FetchError: request to http://192.168.1.17:8081/zeroconf/switch failed, reason: read ECONNRESET
+    at ClientRequest.<anonymous> (C:\codigo\node\ewelink-knil\node_modules\node-fetch\lib\index.js:1501:11)
+    at ClientRequest.emit (node:events:520:28)
+    at emitErrorEvent (node:_http_client:103:11)
+    at Socket.socketErrorListener (node:_http_client:506:5)
+    at Socket.emit (node:events:520:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  type: 'system',
+  errno: 'ECONNRESET',
+  code: 'ECONNRESET'
+}
+[DEBUG] Click detectado: ewelink:1000da4a32:on (procesado en 1223ms)
+ÔØî Error al iniciar el bot: TelegramError: 409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+    at Telegram.callApi (C:\codigo\node\ewelink-knil\node_modules\telegraf\lib\core\network\client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async [Symbol.asyncIterator] (C:\codigo\node\ewelink-knil\node_modules\telegraf\lib\core\network\polling.js:30:33)
+    at async Polling.loop (C:\codigo\node\ewelink-knil\node_modules\telegraf\lib\core\network\polling.js:73:30)
+    at async Telegraf.launch (C:\codigo\node\ewelink-knil\node_modules\telegraf\lib\telegraf.js:194:13) {
+  response: {
+    ok: false,
+    error_code: 409,
+    description: 'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running'
+  },
+  on: {
+    method: 'getUpdates',
+    payload: { timeout: 50, offset: 578507582, allowed_updates: [] }
+  }
+}
+[EwelinkManager] ÔÜá´©Å Fallo LAN para 1000d9b769: request to http://192.168.1.22:8081/zeroconf/switch failed, reason: socket hang up
+Error en acci├│n eWelink: FetchError: request to http://192.168.1.22:8081/zeroconf/switch failed, reason: socket hang up
+    at ClientRequest.<anonymous> (C:\codigo\node\ewelink-knil\node_modules\node-fetch\lib\index.js:1501:11)
+    at ClientRequest.emit (node:events:520:28)
+    at emitErrorEvent (node:_http_client:103:11)
+    at Socket.socketOnEnd (node:_http_client:530:5)
+    at Socket.emit (node:events:532:35)
+    at endReadableNT (node:internal/streams/readable:1696:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  type: 'system',
+  errno: 'ECONNRESET',
+  code: 'ECONNRESET'
+}
+[DEBUG] Click detectado: ewelink:1000d9b769:on (procesado en 302010ms)
+Tasmota [oficina] Estado actualizado: ON
+Tasmota [oficina] Estado actualizado: OFF
