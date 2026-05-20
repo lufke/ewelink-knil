@@ -67,16 +67,42 @@ npm run bot
 *   `/ping` - Comprueba que el bot está activo.
 
 ### 🌉 Puente MQTT (Bridge)
-Para exponer tus dispositivos eWelink y Tuya al broker MQTT:
+Para exponer tus dispositivos eWelink, Tuya y Tasmota al broker MQTT bajo una estructura única:
 ```bash
 npm run mqtt
 ```
-*   **eWelink Tópicos:**
-    *   **Estado:** `ewelink/<device_id>/state` (retains `on`/`off`)
-    *   **Control:** `ewelink/<device_id>/set` (enviar `on` u `off`)
-*   **Tuya Tópicos:**
-    *   **Estado:** `tuya/<device_id>_<dps>/state` (retains `on`/`off`)
-    *   **Control:** `tuya/<device_id>_<dps>/set` (enviar `on` u `off`)
+*   **Tópicos Unificados (Lectura/Escritura):**
+    *   **Estado:** `luces/<id_dispositivo>/state` (mensaje retenido: `on`/`off`)
+    *   **Control:** `luces/<id_dispositivo>/set` (enviar `on` u `off`)
+    *   **Disponibilidad:** `luces/<id_dispositivo>/available` (`online`/`offline`)
+
+### ⚡ Producción con PM2
+Para mantener el Bot de Telegram y el Puente MQTT corriendo 24/7 en segundo plano en tu Raspberry Pi (y que se inicien solos al encender la Pi), se utiliza **PM2**.
+
+Se incluye un archivo de configuración listo (`ecosystem.config.cjs`). Para utilizarlo:
+
+1. **Instalar PM2 globalmente** (si no lo tienes):
+   ```bash
+   sudo npm install -g pm2
+   ```
+2. **Iniciar ambos servicios a la vez:**
+   ```bash
+   pm2 start ecosystem.config.cjs
+   ```
+3. **Ver el estado de los servicios:**
+   ```bash
+   pm2 status
+   ```
+4. **Ver los logs en tiempo real:**
+   ```bash
+   pm2 logs
+   ```
+5. **Configurar para que se inicien solos al reiniciar la Raspberry:**
+   ```bash
+   pm2 startup
+   # (Copia y ejecuta en la terminal el comando de systemctl que imprima PM2 en tu pantalla)
+   pm2 save
+   ```
 
 ### 🔌 Scripts adicionales
 *   `npm run tasmota` - Ejecuta comandos de control manual para Tasmota (`tasmota-control.js`).
