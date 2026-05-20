@@ -7,12 +7,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://localhost';
-const EWELINK_PREFIX = 'ewelink';
-const TUYA_PREFIX = 'tuya';
-const TASMOTA_PREFIX = 'tasmota';
+const MQTT_PREFIX = 'luces';
 
 async function startBridge() {
-    console.log('--- Iniciando Puente IoT Unificado (eWelink + Tuya + Tasmota) a MQTT ---');
+    console.log('--- Iniciando Puente IoT Totalmente Unificado a MQTT ---');
 
     // Inicializar el manager de eWelink (carga cache y tabla ARP)
     const ewelinkInitialized = await ewelinkManager.init();
@@ -31,27 +29,17 @@ async function startBridge() {
     client.on('connect', () => {
         console.log(`✅ Puente MQTT conectado al broker: ${MQTT_BROKER}`);
 
-        // Suscribirse a comandos de eWelink (ewelink/+/set)
-        client.subscribe(`${EWELINK_PREFIX}/+/set`, (err) => {
-            if (!err) console.log(`📡 Suscrito a comandos: ${EWELINK_PREFIX}/+/set`);
+        // Suscribirse al tópico de control unificado: luces/+/set
+        client.subscribe(`${MQTT_PREFIX}/+/set`, (err) => {
+            if (!err) console.log(`📡 Suscrito a comandos unificados: ${MQTT_PREFIX}/+/set`);
         });
 
-        // Suscribirse a comandos de Tuya (tuya/+/set)
-        client.subscribe(`${TUYA_PREFIX}/+/set`, (err) => {
-            if (!err) console.log(`📡 Suscrito a comandos: ${TUYA_PREFIX}/+/set`);
-        });
-
-        // Suscribirse a comandos unificados de Tasmota (tasmota/+/set)
-        client.subscribe(`${TASMOTA_PREFIX}/+/set`, (err) => {
-            if (!err) console.log(`📡 Suscrito a comandos: ${TASMOTA_PREFIX}/+/set`);
-        });
-
-        // Escuchar los reportes nativos de Tasmota para reflejarlos en nuestro tópico unificado
+        // Escuchar los reportes nativos de Tasmota para reflejarlos en nuestro tópico unificado luces/+/state
         client.subscribe('stat/+/POWER', (err) => {
-            if (!err) console.log(`📡 Escuchando reportes nativos: stat/+/POWER`);
+            if (!err) console.log(`📡 Escuchando reportes nativos de Tasmota para traducción de estado`);
         });
 
-        // Publicar estado inicial de los equipos
+        // Publicar estado inicial de eWelink y Tuya
         publicarEstadoEwelink(client);
         publicarEstadoTuya(client);
 
@@ -63,23 +51,22 @@ async function startBridge() {
         const payload = message.toString().toLowerCase();
 
         // --- 1. Caso: Reportes nativos de Tasmota (stat/+/POWER) ---
+        // Traducimos de "stat/oficina/POWER" a "luces/oficina/state"
         if (topic.startsWith('stat/') && topic.endsWith('/POWER')) {
             const parts = topic.split('/');
             const deviceTopic = parts[1]; // ej: "oficina"
             if (deviceTopic) {
-                // Reflejamos el estado en el tópico unificado tasmota/oficina/state
-                client.publish(`${TASMOTA_PREFIX}/${deviceTopic}/state`, payload, { retain: true });
-                client.publish(`${TASMOTA_PREFIX}/${deviceTopic}/available`, 'online', { retain: true });
-                console.log(`[Tasmota Bridge] Reflejando estado: ${deviceTopic} -> ${payload}`);
+                client.publish(`${MQTT_PREFIX}/${deviceTopic}/state`, payload, { retain: true });
+                client.publish(`${MQTT_PREFIX}/${deviceTopic}/available`, 'online', { retain: true });
+                console.log(`[Tasmota Bridge] 🔄 Traduciendo estado: ${deviceTopic} -> ${payload}`);
             }
             return;
         }
 
-        // --- 2. Caso: Comandos unificados (set) ---
+        // --- 2. Caso: Comandos unificados (luces/<id>/set) ---
         const parts = topic.split('/');
-        if (parts.length !== 3 || parts[2] !== 'set') return;
+        if (parts.length !== 3 || parts[0] !== MQTT_PREFIX || parts[2] !== 'set') return;
 
-        const prefix = parts[0];
         const deviceId = parts[1];
 
         if (payload !== 'on' && payload !== 'off') {
@@ -87,52 +74,53 @@ async function startBridge() {
             return;
         }
 
-        // CONTROL EWELINK
-        if (prefix === EWELINK_PREFIX) {
-            console.log(`[eWelink MQTT] -> Recibido comando '${payload}' para dispositivo ${deviceId}`);
-            try {
-                const response = await ewelinkManager.setPowerState(deviceId, payload);
-                if (response.status === 'ok' || response.state === payload) {
-                    console.log(`[eWelink MQTT] Local -> Dispositivo ${deviceId} cambiado a ${payload}`);
-                    client.publish(`${EWELINK_PREFIX}/${deviceId}/state`, payload, { retain: true });
-                } else {
-                    console.error(`[eWelink MQTT] Local -> Error al cambiar estado de ${deviceId}:`, response);
-                }
-            } catch (error) {
-                console.error(`[eWelink MQTT] Local -> Error en la comunicación con ${deviceId}:`, error.message);
-            }
-        } 
-        
-        // CONTROL TUYA
-        else if (prefix === TUYA_PREFIX) {
-            console.log(`[Tuya MQTT] -> Recibido comando '${payload}' para dispositivo ${deviceId}`);
+        console.log(`[Puente Unificado] MQTT -> Recibido comando '${payload}' para dispositivo '${deviceId}'`);
+
+        // RUTA A: TUYA
+        const esTuya = tuyaManager.getEquipos().some(e => e.botId === deviceId);
+        if (esTuya) {
             try {
                 const response = await tuyaManager.setPowerState(deviceId, payload);
                 if (response.status === 'ok') {
-                    console.log(`[Tuya MQTT] Local -> Dispositivo ${deviceId} cambiado a ${payload}`);
-                    client.publish(`${TUYA_PREFIX}/${deviceId}/state`, payload, { retain: true });
+                    console.log(`[Puente Unificado] OK -> Tuya [${deviceId}] cambiado a ${payload}`);
+                    client.publish(`${MQTT_PREFIX}/${deviceId}/state`, payload, { retain: true });
                 } else {
-                    console.error(`[Tuya MQTT] Local -> Error al cambiar estado de ${deviceId}:`, response);
+                    console.error(`[Puente Unificado] Error Tuya [${deviceId}]:`, response);
                 }
             } catch (error) {
-                console.error(`[Tuya MQTT] Local -> Error en la comunicación con ${deviceId}:`, error.message);
+                console.error(`[Puente Unificado] Error controlando Tuya [${deviceId}]:`, error.message);
             }
+            return;
         }
 
-        // CONTROL TASMOTA
-        else if (prefix === TASMOTA_PREFIX) {
-            console.log(`[Tasmota MQTT] -> Recibido comando '${payload}' para dispositivo ${deviceId}`);
+        // RUTA A: EWELINK
+        const esEwelink = ewelinkManager.getEquipos().some(e => e.id === deviceId);
+        if (esEwelink) {
             try {
-                const response = await tasmotaManager.setPowerState(deviceId, payload);
-                if (response.status === 'ok') {
-                    console.log(`[Tasmota MQTT] Local -> Comando de encendido/apagado enviado a Tasmota ${deviceId}`);
-                    // El estado se actualizará automáticamente cuando el dispositivo responda en stat/+/POWER
+                const response = await ewelinkManager.setPowerState(deviceId, payload);
+                if (response.status === 'ok' || response.state === payload) {
+                    console.log(`[Puente Unificado] OK -> eWelink [${deviceId}] cambiado a ${payload}`);
+                    client.publish(`${MQTT_PREFIX}/${deviceId}/state`, payload, { retain: true });
                 } else {
-                    console.error(`[Tasmota MQTT] Local -> Error enviando comando a Tasmota ${deviceId}:`, response);
+                    console.error(`[Puente Unificado] Error eWelink [${deviceId}]:`, response);
                 }
             } catch (error) {
-                console.error(`[Tasmota MQTT] Local -> Error en la comunicación con Tasmota ${deviceId}:`, error.message);
+                console.error(`[Puente Unificado] Error controlando eWelink [${deviceId}]:`, error.message);
             }
+            return;
+        }
+
+        // RUTA A: TASMOTA (Se asume por descarte)
+        try {
+            const response = await tasmotaManager.setPowerState(deviceId, payload);
+            if (response.status === 'ok') {
+                console.log(`[Puente Unificado] OK -> Comando enviado a Tasmota [${deviceId}]`);
+                // El estado se reflejará de vuelta automáticamente mediante el listener de stat/+/POWER
+            } else {
+                console.error(`[Puente Unificado] Error Tasmota [${deviceId}]:`, response);
+            }
+        } catch (error) {
+            console.error(`[Puente Unificado] Error controlando Tasmota [${deviceId}]:`, error.message);
         }
     });
 
@@ -144,22 +132,22 @@ async function startBridge() {
 function publicarEstadoEwelink(client) {
     const equipos = ewelinkManager.getEquipos();
     equipos.forEach(equipo => {
-        client.publish(`${EWELINK_PREFIX}/${equipo.id}/available`, 'online', { retain: true });
-        client.publish(`${EWELINK_PREFIX}/${equipo.id}/config`, JSON.stringify(equipo), { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.id}/available`, 'online', { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.id}/config`, JSON.stringify(equipo), { retain: true });
         
         const est = equipo.estado ? equipo.estado.toLowerCase() : 'unknown';
-        client.publish(`${EWELINK_PREFIX}/${equipo.id}/state`, est, { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.id}/state`, est, { retain: true });
     });
 }
 
 function publicarEstadoTuya(client) {
     const equipos = tuyaManager.getEquipos();
     equipos.forEach(equipo => {
-        client.publish(`${TUYA_PREFIX}/${equipo.botId}/available`, 'online', { retain: true });
-        client.publish(`${TUYA_PREFIX}/${equipo.botId}/config`, JSON.stringify(equipo), { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.botId}/available`, 'online', { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.botId}/config`, JSON.stringify(equipo), { retain: true });
         
         const est = equipo.estado ? equipo.estado.toLowerCase() : 'unknown';
-        client.publish(`${TUYA_PREFIX}/${equipo.botId}/state`, est, { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.botId}/state`, est, { retain: true });
     });
 }
 
@@ -168,7 +156,7 @@ function imprimirDirectorioConsola() {
     const equiposTuya = tuyaManager.getEquipos();
 
     console.log('\n========================================================================');
-    console.log('📋 DIRECTORIO DE DISPOSITIVOS DISPONIBLES EN MQTT');
+    console.log('📋 DIRECTORIO UNIFICADO DE DISPOSITIVOS DISPONIBLES EN MQTT');
     console.log('========================================================================');
 
     console.log('\n🔹 EQUIPOS EWELINK:');
@@ -177,8 +165,8 @@ function imprimirDirectorioConsola() {
     } else {
         equiposEwelink.forEach(e => {
             console.log(`  - [${e.nombre}] (ID: ${e.id})`);
-            console.log(`    👉 Estado:   ${EWELINK_PREFIX}/${e.id}/state  (Lectura)`);
-            console.log(`    👉 Control:  ${EWELINK_PREFIX}/${e.id}/set    (Escritura: 'on' / 'off')`);
+            console.log(`    👉 Estado:   ${MQTT_PREFIX}/${e.id}/state  (Lectura)`);
+            console.log(`    👉 Control:  ${MQTT_PREFIX}/${e.id}/set    (Escritura: 'on' / 'off')`);
         });
     }
 
@@ -189,15 +177,15 @@ function imprimirDirectorioConsola() {
         equiposTuya.forEach(e => {
             const name = e.nombre || e.name || e.id;
             console.log(`  - [${name}] (ID: ${e.botId})`);
-            console.log(`    👉 Estado:   ${TUYA_PREFIX}/${e.botId}/state  (Lectura)`);
-            console.log(`    👉 Control:  ${TUYA_PREFIX}/${e.botId}/set    (Escritura: 'on' / 'off')`);
+            console.log(`    👉 Estado:   ${MQTT_PREFIX}/${e.botId}/state  (Lectura)`);
+            console.log(`    👉 Control:  ${MQTT_PREFIX}/${e.botId}/set    (Escritura: 'on' / 'off')`);
         });
     }
 
     console.log('\n🔹 EQUIPOS TASMOTA (Descubiertos dinámicamente):');
-    console.log(`    👉 Estado:   ${TASMOTA_PREFIX}/<topic>/state  (Lectura)`);
-    console.log(`    👉 Control:  ${TASMOTA_PREFIX}/<topic>/set    (Escritura: 'on' / 'off')`);
-    console.log('    (Ejemplo para dispositivo "oficina": tasmota/oficina/set)');
+    console.log(`    👉 Estado:   ${MQTT_PREFIX}/<topic>/state  (Lectura)`);
+    console.log(`    👉 Control:  ${MQTT_PREFIX}/<topic>/set    (Escritura: 'on' / 'off')`);
+    console.log('    (Ejemplo para dispositivo "oficina": luces/oficina/set)');
     console.log('========================================================================\n');
 }
 
