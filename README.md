@@ -1,129 +1,142 @@
-# eWelink, Tasmota & Tuya IoT Manager (ewelink-knil)
+# eWelink, Tasmota & Tuya — MQTT Bridge (ewelink-knil)
 
-Un sistema integrado en Node.js para controlar y gestionar dispositivos inteligentes **eWelink** (Sonoff, etc.), **Tasmota** y **Tuya**. Permite el control dual a través de un **Bot de Telegram** interactivo y un **Puente MQTT** (Bridge) para integración con otros sistemas domésticos como Home Assistant.
+Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **Tasmota** y **Tuya** hacia un broker **MQTT** con tópicos unificados, facilitando la integración con Home Assistant y cualquier otro cliente MQTT.
 
-## 🚀 Características Principales
+## 🚀 Características
 
-*   **Gestor eWelink (LAN + Cloud):** Controla tus dispositivos eWelink primariamente a través de la red local (LAN) mediante Zeroconf/ARP para mayor rapidez. Si el dispositivo no responde en local, hace un *fallback* automático a la nube (Cloud).
-*   **Integración Tasmota:** Descubrimiento automático de dispositivos Tasmota en la red utilizando MQTT y control de sus estados.
-*   **Integración Tuya (Control Local):** Control local de dispositivos Tuya (ampolletas, enchufes, interruptores de múltiples canales) mediante `tuyapi`, permitiendo conmutar canales (DPS) de manera instantánea y local.
-*   **Bot de Telegram interactivo:** Un bot completo creado con Telegraf que te permite:
-    *   Listar todos los equipos descubiertos (`/luces`).
-    *   Controlar el estado (ON/OFF) mediante botones interactivos (Inline Keyboard).
-    *   Refrescar la caché y redescubrir dispositivos (`/refresh`).
-*   **Puente MQTT (eWelink + Tuya a MQTT):** Expone tus dispositivos eWelink y Tuya locales hacia un broker MQTT, publicando su disponibilidad, información y estado, y permitiendo su control vía MQTT.
+- **Gestor eWelink (LAN + Cloud):** Control primario vía red local (Zeroconf/ARP). Si el dispositivo no responde en LAN, hace *fallback* automático a la nube.
+- **Integración Tasmota:** Descubrimiento enriquecido mediante el tópico nativo `tasmota/discovery/+/config` (nombre real, IP, modelo, firmware) y seguimiento de estado en tiempo real vía `tele/+/LWT`, `stat/+/POWER` y `tele/+/STATE`.
+- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS).
+- **Tópicos MQTT unificados:** Todos los dispositivos (sin importar la marca) quedan disponibles bajo el prefijo `luces/<id>/`.
 
 ## 📋 Requisitos
 
-*   [Node.js](https://nodejs.org/) (v20 o superior recomendado)
-*   Un broker MQTT (ej. Mosquitto) funcionando local o remotamente.
-*   Un token de Bot de Telegram (obtenido a través de [@BotFather](https://t.me/botfather)).
-*   Credenciales de tu cuenta eWelink.
-*   Credenciales de API de desarrollo de Tuya (solo para obtener las llaves locales por primera vez).
+- [Node.js](https://nodejs.org/) v20 o superior
+- Un broker MQTT (ej. Mosquitto) corriendo local o remotamente
+- Credenciales de tu cuenta eWelink
+- Credenciales locales de tus dispositivos Tuya (`id` + `key`)
 
 ## 🛠️ Instalación
 
-1. Clona el repositorio o descarga el código.
-2. Instala las dependencias de Node:
+1. Clona el repositorio e instala dependencias:
    ```bash
    npm install
    ```
-3. Crea un archivo `.env` en la raíz del proyecto basándote en la siguiente configuración:
 
+2. Crea el archivo `.env` en la raíz del proyecto:
    ```env
    # Credenciales eWelink
    EWELINK_EMAIL=tu_correo@email.com
    EWELINK_PASSWORD=tu_contraseña
-   APP_ID=tu_app_id_opcional
-   APP_SECRET=tu_app_secret_opcional
+   APP_ID=tu_app_id
+   APP_SECRET=tu_app_secret
 
-   # Configuración de Telegram
-   BOT_TOKEN=tu_token_de_telegram_bot
-
-   # Configuración MQTT
+   # Broker MQTT
    MQTT_BROKER=mqtt://localhost:1883
-
-   # Configuración Ngrok (Opcional)
-   NGROK_AUTH_TOKEN=tu_token_de_ngrok
    ```
 
-4. Configura tus dispositivos Tuya en `tuya-devices.json`. Para obtener las llaves locales, puedes usar la herramienta de ayuda del asistente:
+3. Configura tus dispositivos Tuya en `tuya-devices.json` (ver ejemplo en `.env.example`). Para obtener las llaves locales:
    ```bash
    npx @tuyapi/cli wizard
    ```
 
+4. Genera la caché inicial de dispositivos eWelink:
+   ```bash
+   npm run cache
+   ```
+
 ## 🚀 Uso
 
-El proyecto tiene múltiples scripts dependiendo de la funcionalidad que desees ejecutar.
-
-### 🤖 Bot de Telegram
-Para iniciar el bot interactivo de Telegram y gestionar tus dispositivos desde el chat:
+### Desarrollo (con recarga automática)
 ```bash
-npm run bot
+npm run dev
 ```
-**Comandos del Bot:**
-*   `/luces` - Lista todos los equipos descubiertos (eWelink, Tasmota y Tuya) con botones para encender/apagar.
-*   `/refresh` - Fuerza la actualización de la caché de eWelink (escaneo de IPs por ARP) y solicita estados de Tasmota.
-*   `/ping` - Comprueba que el bot está activo.
 
-### 🌉 Puente MQTT (Bridge)
-Para exponer tus dispositivos eWelink, Tuya y Tasmota al broker MQTT bajo una estructura única:
+### Producción (Node directo)
 ```bash
-npm run mqtt
+npm run start
 ```
-*   **Tópicos Unificados (Lectura/Escritura):**
-    *   **Estado:** `luces/<id_dispositivo>/state` (mensaje retenido: `on`/`off`)
-    *   **Control:** `luces/<id_dispositivo>/set` (enviar `on` u `off`)
-    *   **Disponibilidad:** `luces/<id_dispositivo>/available` (`online`/`offline`)
 
-### ⚡ Producción con PM2
-Para mantener el Bot de Telegram y el Puente MQTT corriendo 24/7 en segundo plano en tu Raspberry Pi (y que se inicien solos al encender la Pi), se utiliza **PM2**.
+### Producción con PM2 (recomendado en Raspberry Pi)
+```bash
+# Instalar PM2 globalmente si no lo tienes
+sudo npm install -g pm2
 
-Se incluye un archivo de configuración listo (`ecosystem.config.cjs`). Para utilizarlo:
+# Iniciar el bridge
+pm2 start ecosystem.config.cjs
 
-1. **Instalar PM2 globalmente** (si no lo tienes):
-   ```bash
-   sudo npm install -g pm2
-   ```
-2. **Iniciar ambos servicios a la vez:**
-   ```bash
-   pm2 start ecosystem.config.cjs
-   ```
-3. **Ver el estado de los servicios:**
-   ```bash
-   pm2 status
-   ```
-4. **Ver los logs en tiempo real:**
-   ```bash
-   pm2 logs
-   ```
-5. **Configurar para que se inicien solos al reiniciar la Raspberry:**
-   ```bash
-   pm2 startup
-   # (Copia y ejecuta en la terminal el comando de systemctl que imprima PM2 en tu pantalla)
-   pm2 save
-   ```
+# Habilitar inicio automático al encender la Raspberry
+pm2 startup
+pm2 save
+```
 
-### 🔌 Scripts adicionales
-*   `npm run tasmota` - Ejecuta comandos de control manual para Tasmota (`tasmota-control.js`).
-*   `npm run tasmota:discovery` - Ejecuta el script de auto-descubrimiento manual de Tasmota (`tasmota-discovery.js`).
+## 🌉 Esquema MQTT
+
+Todos los dispositivos quedan accesibles bajo el prefijo `luces/`:
+
+| Tópico | Dirección | Descripción |
+|--------|-----------|-------------|
+| `luces/<id>/set` | Escritura | Enviar `on` u `off` para controlar el dispositivo |
+| `luces/<id>/state` | Lectura | Estado actual (`on` / `off`) — retenido |
+| `luces/<id>/available` | Lectura | Disponibilidad (`online`) — retenido |
+| `luces/<id>/config` | Lectura | Metadatos del dispositivo en JSON — retenido |
+
+### Tópicos nativos de Tasmota (internos)
+
+El manager también escucha los tópicos propios de Tasmota para obtener datos ricos:
+
+| Tópico | Descripción |
+|--------|-------------|
+| `tasmota/discovery/+/config` | Discovery nativo: nombre, IP, MAC, modelo, firmware |
+| `tele/+/LWT` | Disponibilidad (Online / Offline) |
+| `stat/+/POWER` | Cambios de estado en tiempo real |
+| `tele/+/STATE` | Telemetría periódica con estado de carga |
+
+> **Nota:** Para que el tópico `tasmota/discovery/+/config` sea publicado por el dispositivo,
+> asegúrate de que la opción **SetOption19** esté activa en tu Tasmota, o usa el comando
+> `Discover 1` desde la consola del dispositivo.
 
 ## 📦 Estructura del Proyecto
 
-*   `bot.js`: Lógica principal del Bot de Telegram usando Telegraf.
-*   `ewelink-manager.js`: Clase encargada de manejar eWelink (LAN + Cloud).
-*   `tasmota-manager.js`: Clase encargada de la comunicación MQTT con dispositivos Tasmota.
-*   `tuya-manager.js`: Clase encargada del control local y directo de dispositivos Tuya.
-*   `tuya-devices.json`: Archivo de configuración (excluido de git) donde se configuran los IDs, llaves locales, canales y opcionalmente IPs estáticas de tus dispositivos Tuya.
-*   `mqtt-bridge.js`: Puente para sincronizar el estado y comandos de eWelink y Tuya con tu broker MQTT local.
-*   `devices-cache.json` & `arp-table.json`: Archivos temporales generados automáticamente que actúan como caché de la red y dispositivos eWelink locales.
+```
+ewelink-knil/
+├── src/
+│   ├── mqtt-bridge.js          ← Entry point principal
+│   └── managers/
+│       ├── ewelink-manager.js  ← Control eWelink (LAN + Cloud)
+│       ├── tuya-manager.js     ← Control local Tuya
+│       └── tasmota-manager.js  ← Descubrimiento y control Tasmota
+├── scripts/
+│   ├── create-cache.js         ← Genera/refresca devices-cache.json y arp-table.json
+│   ├── tasmota-control.js      ← Prueba manual de control Tasmota
+│   └── tasmota-discovery.js    ← Descubrimiento interactivo de Tasmota
+├── archive/                    ← Código legacy (no se ejecuta)
+├── tuya-devices.json           ← Config Tuya (excluido de git)
+├── devices-cache.json          ← Caché eWelink (excluido de git, auto-generado)
+├── arp-table.json              ← Tabla ARP local (excluido de git, auto-generado)
+├── ecosystem.config.cjs        ← Configuración PM2
+└── package.json
+```
 
-## 🤝 Dependencias Principales
-*   [`@pipechela/ewelink-api`](https://www.npmjs.com/package/@pipechela/ewelink-api) - Cliente para eWelink API
-*   [`telegraf`](https://telegraf.js.org/) - Framework para Bots de Telegram
-*   [`mqtt`](https://www.npmjs.com/package/mqtt) - Cliente MQTT para Node.js
-*   [`tuyapi`](https://www.npmjs.com/package/tuyapi) - Cliente de control local para dispositivos Tuya/SmartLife
-*   [`dotenv`](https://www.npmjs.com/package/dotenv) - Manejo de variables de entorno
+## 🔧 Scripts disponibles
+
+| Comando | Descripción |
+|---------|-------------|
+| `npm run dev` | Inicia el bridge con nodemon (recarga en cambios) |
+| `npm run start` | Inicia el bridge directamente con Node |
+| `npm run cache` | Regenera la caché de dispositivos eWelink y la tabla ARP |
+| `npm run tasmota` | Prueba control manual de un dispositivo Tasmota |
+| `npm run tasmota:discovery` | Modo interactivo de descubrimiento Tasmota |
+
+## 🤝 Dependencias
+
+| Paquete | Uso |
+|---------|-----|
+| [`@pipechela/ewelink-api`](https://www.npmjs.com/package/@pipechela/ewelink-api) | Cliente eWelink (LAN + Cloud) |
+| [`mqtt`](https://www.npmjs.com/package/mqtt) | Cliente MQTT para Node.js |
+| [`tuyapi`](https://www.npmjs.com/package/tuyapi) | Control local de dispositivos Tuya |
+| [`dotenv`](https://www.npmjs.com/package/dotenv) | Variables de entorno |
+| [`@supabase/supabase-js`](https://www.npmjs.com/package/@supabase/supabase-js) | Cliente Supabase (lecturas de sensores) |
 
 ## 📝 Licencia
 ISC

@@ -1,5 +1,6 @@
 import dotenv from 'dotenv'
 import { Telegraf, Input, Markup } from 'telegraf';
+import mqtt from 'mqtt';
 import ewelinkManager from './ewelink-manager.js';
 import tasmotaManager from './tasmota-manager.js';
 import ngrokManager from './ngrok-manager.js';
@@ -44,6 +45,54 @@ try {
     console.log(`✅ Token válido. Bot: @${boti.username} (ID: ${boti.id})`);
 } catch (e) {
     console.error('❌ Error: Token de bot inválido o sin conexión:', e.message);
+}
+
+// --- Cliente MQTT para publicar comandos y recibir confirmaciones de estado ---
+const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://localhost';
+const MQTT_PREFIX = 'luces';
+const mqttClient = mqtt.connect(MQTT_BROKER);
+const pendingCommands = new Map(); // deviceId -> { resolve, reject, timeout }
+
+mqttClient.on('connect', () => {
+    console.log(`✅ Bot MQTT conectado al broker: ${MQTT_BROKER}`);
+    mqttClient.subscribe(`${MQTT_PREFIX}/+/state`, (err) => {
+        if (!err) console.log(`📡 Bot suscrito a confirmaciones de estado: ${MQTT_PREFIX}/+/state`);
+    });
+});
+
+mqttClient.on('message', (topic, message) => {
+    if (topic.startsWith(`${MQTT_PREFIX}/`) && topic.endsWith('/state')) {
+        const deviceId = topic.split('/')[1];
+        if (pendingCommands.has(deviceId)) {
+            const { resolve, timeout } = pendingCommands.get(deviceId);
+            clearTimeout(timeout);
+            pendingCommands.delete(deviceId);
+            resolve(message.toString());
+        }
+    }
+});
+
+mqttClient.on('error', (err) => {
+    console.error('❌ Error MQTT en el bot:', err.message);
+});
+
+/**
+ * Publica un comando en MQTT y espera la confirmación de estado.
+ * @param {string} deviceId - ID del dispositivo (o topic para Tasmota)
+ * @param {string} state - 'on' o 'off'
+ * @returns {Promise<string>} - El nuevo estado confirmado
+ */
+function sendCommand(deviceId, state) {
+    return new Promise((resolve, reject) => {
+        const timeoutMs = 6000;
+        const timeout = setTimeout(() => {
+            pendingCommands.delete(deviceId);
+            reject(new Error(`Sin respuesta del bridge para '${deviceId}' (timeout ${timeoutMs / 1000}s). ¿Está corriendo mqtt-bridge.js?`));
+        }, timeoutMs);
+        pendingCommands.set(deviceId, { resolve, reject, timeout });
+        mqttClient.publish(`${MQTT_PREFIX}/${deviceId}/set`, state);
+        console.log(`[MQTT] Publicado: ${MQTT_PREFIX}/${deviceId}/set -> ${state}`);
+    });
 }
 
 // Middleware de debug para ver todas las acciones
@@ -198,28 +247,18 @@ bot.command('refresh', async ctx => {
 bot.action(/^ewelink:(.+):(\w+)$/, async (ctx) => {
     const deviceId = ctx.match[1];
     const state = ctx.match[2];
-    console.log(`[EWELINK] Procesando: ${deviceId} -> ${state}`);
+    console.log(`[EWELINK] Publicando en MQTT: ${deviceId} -> ${state}`);
 
-    const equipos = ewelinkManager.getEquipos();
-    const equipo = equipos.find(d => d.id === deviceId);
+    const equipo = ewelinkManager.getEquipos().find(d => d.id === deviceId);
+    const nombre = equipo ? equipo.nombre : deviceId;
 
+    await ctx.answerCbQuery(`Enviando ${state.toUpperCase()} a ${nombre}...`);
     try {
-        await ctx.answerCbQuery(`Enviando ${state.toUpperCase()} a ${equipo ? equipo.nombre : deviceId}...`);
-        const status = await ewelinkManager.setPowerState(deviceId, state);
-
-        if (status.status === 'ok' || status.state === state) {
-            await ctx.reply(`✅ ${equipo ? equipo.nombre : deviceId} ahora está ${state.toUpperCase()}`);
-        } else {
-            await ctx.reply(`⚠️ Error eWelink: ${JSON.stringify(status)}`);
-        }
+        const newState = await sendCommand(deviceId, state);
+        await ctx.reply(`✅ ${nombre} ahora está ${newState.toUpperCase()}`);
     } catch (error) {
-        console.error('Error en acción eWelink:', error);
-        try {
-            await ctx.answerCbQuery('Error en la conexión local').catch(() => { });
-            await ctx.reply(`❌ Error de conexión local con eWelink: ${error.message}`);
-        } catch (innerError) {
-            console.error('Error al enviar respuesta de error eWelink:', innerError);
-        }
+        console.error('Error en acción eWelink:', error.message);
+        await ctx.reply(`⚠️ ${error.message}`);
     }
 });
 
@@ -227,28 +266,18 @@ bot.action(/^ewelink:(.+):(\w+)$/, async (ctx) => {
 bot.action(/^tasmota:(.+):(\w+)$/, async (ctx) => {
     const topic = ctx.match[1];
     const state = ctx.match[2];
-    console.log(`[TASMOTA] Procesando: ${topic} -> ${state}`);
+    console.log(`[TASMOTA] Publicando en MQTT: ${topic} -> ${state}`);
 
-    const equipos = tasmotaManager.getEquipos();
-    const equipo = equipos.find(d => d.topic === topic);
+    const equipo = tasmotaManager.getEquipos().find(d => d.topic === topic);
+    const nombre = equipo ? equipo.nombre : topic;
 
+    await ctx.answerCbQuery(`Enviando ${state.toUpperCase()} a ${nombre}...`);
     try {
-        await ctx.answerCbQuery(`Enviando ${state.toUpperCase()} a Tasmota ${topic}...`);
-        const status = await tasmotaManager.setPowerState(topic, state);
-
-        if (status.status === 'ok') {
-            await ctx.reply(`✅ Tasmota [${equipo ? equipo.nombre : topic}] ahora está ${state.toUpperCase()}`);
-        } else {
-            await ctx.reply(`⚠️ Error Tasmota: ${status.error}`);
-        }
+        const newState = await sendCommand(topic, state);
+        await ctx.reply(`✅ Tasmota [${nombre}] ahora está ${newState.toUpperCase()}`);
     } catch (error) {
-        console.error('Error en acción Tasmota:', error);
-        try {
-            await ctx.answerCbQuery('Error en la conexión MQTT').catch(() => { });
-            await ctx.reply(`❌ Error de conexión MQTT con Tasmota: ${error.message}`);
-        } catch (innerError) {
-            console.error('Error al enviar respuesta de error Tasmota:', innerError);
-        }
+        console.error('Error en acción Tasmota:', error.message);
+        await ctx.reply(`⚠️ ${error.message}`);
     }
 });
 
@@ -256,28 +285,18 @@ bot.action(/^tasmota:(.+):(\w+)$/, async (ctx) => {
 bot.action(/^tuya:(.+):(\w+)$/, async (ctx) => {
     const deviceId = ctx.match[1];
     const state = ctx.match[2];
-    console.log(`[TUYA] Procesando: ${deviceId} -> ${state}`);
+    console.log(`[TUYA] Publicando en MQTT: ${deviceId} -> ${state}`);
 
-    const equipos = tuyaManager.getEquipos();
-    const equipo = equipos.find(d => d.id === deviceId);
+    const equipo = tuyaManager.getEquipos().find(d => d.botId === deviceId);
+    const nombre = equipo ? (equipo.nombre || equipo.name || deviceId) : deviceId;
 
+    await ctx.answerCbQuery(`Enviando ${state.toUpperCase()} a ${nombre}...`);
     try {
-        await ctx.answerCbQuery(`Enviando ${state.toUpperCase()} a ${equipo ? equipo.nombre : deviceId}...`);
-        const status = await tuyaManager.setPowerState(deviceId, state);
-
-        if (status.status === 'ok') {
-            await ctx.reply(`✅ Tuya [${equipo ? equipo.nombre : deviceId}] ahora está ${state.toUpperCase()}`);
-        } else {
-            await ctx.reply(`⚠️ Error Tuya: ${status.error}`);
-        }
+        const newState = await sendCommand(deviceId, state);
+        await ctx.reply(`✅ Tuya [${nombre}] ahora está ${newState.toUpperCase()}`);
     } catch (error) {
-        console.error('Error en acción Tuya:', error);
-        try {
-            await ctx.answerCbQuery('Error en la conexión local').catch(() => { });
-            await ctx.reply(`❌ Error de conexión local con Tuya: ${error.message}`);
-        } catch (innerError) {
-            console.error('Error al enviar respuesta de error Tuya:', innerError);
-        }
+        console.error('Error en acción Tuya:', error.message);
+        await ctx.reply(`⚠️ ${error.message}`);
     }
 });
 

@@ -1,7 +1,7 @@
 import mqtt from 'mqtt';
-import ewelinkManager from './ewelink-manager.js';
-import tuyaManager from './tuya-manager.js';
-import tasmotaManager from './tasmota-manager.js';
+import ewelinkManager from './managers/ewelink-manager.js';
+import tuyaManager from './managers/tuya-manager.js';
+import tasmotaManager from './managers/tasmota-manager.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

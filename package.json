@@ -6,16 +6,16 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "bot": "nodemon --ignore arp-table.json --ignore devices-cache.json bot.js",
-    "mqtt": "node mqtt-bridge.js",
-    "tasmota": "node tasmota-control.js",
-    "tasmota:discovery": "node tasmota-discovery.js"
+    "dev": "nodemon --ignore arp-table.json --ignore devices-cache.json --ignore tasmota-devices.json src/mqtt-bridge.js",
+    "start": "node src/mqtt-bridge.js",
+    "tasmota": "node scripts/tasmota-control.js",
+    "tasmota:discovery": "node scripts/tasmota-discovery.js",
+    "cache": "node scripts/create-cache.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@ngrok/ngrok": "^1.7.0",
     "@pipechela/ewelink-api": "^1.0.0",
     "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^16.4.5",

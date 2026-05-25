@@ -1,4 +1,4 @@
-import manager from './tasmota-manager.js';
+import manager from '../src/managers/tasmota-manager.js';
 
 async function main() {
     console.log('--- Gestor de Dispositivos Tasmota ---');
