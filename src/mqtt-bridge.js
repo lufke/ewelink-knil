@@ -26,6 +26,18 @@ async function startBridge() {
 
     const client = mqtt.connect(MQTT_BROKER);
 
+    // Escuchar cambios de estado físicos locales para eWelink
+    ewelinkManager.on('stateChange', ({ deviceId, state }) => {
+        client.publish(`${MQTT_PREFIX}/${deviceId}/state`, state, { retain: true });
+        console.log(`[Puente Unificado] eWelink Local -> Publicado estado [${deviceId}]: ${state}`);
+    });
+
+    // Escuchar cambios de estado físicos locales para Tuya
+    tuyaManager.on('stateChange', ({ botId, state }) => {
+        client.publish(`${MQTT_PREFIX}/${botId}/state`, state, { retain: true });
+        console.log(`[Puente Unificado] Tuya Local -> Publicado estado [${botId}]: ${state}`);
+    });
+
     client.on('connect', () => {
         console.log(`✅ Puente MQTT conectado al broker: ${MQTT_BROKER}`);
 

@@ -1,5 +1,9 @@
 import eWelink from "@pipechela/ewelink-api";
 import Zeroconf from '@pipechela/ewelink-api/src/classes/Zeroconf.js';
+import { decryptionData } from '@pipechela/ewelink-api/src/helpers/ewelink.js';
+import bonjourService from 'bonjour-service';
+const { Bonjour } = bonjourService;
+import { EventEmitter } from 'events';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -19,8 +23,9 @@ function getLocalIp() {
     return null;
 }
 
-class EwelinkManager {
+class EwelinkManager extends EventEmitter {
     constructor() {
+        super();
         this.devicesCache = [];
         this.arpTable = [];
         this.connection = null;
@@ -85,6 +90,9 @@ class EwelinkManager {
             }).catch(e => {
                 console.warn('[EwelinkManager] ⚠️ Falló escaneo ARP dinámico:', e.message);
             });
+
+            // Iniciar escaneo mDNS local para detectar pulsaciones de botones físicos
+            this.startMdnsListener();
 
             return true;
         } catch (error) {
@@ -168,6 +176,72 @@ class EwelinkManager {
             } else {
                 throw lanError;
             }
+        }
+    }
+
+    startMdnsListener() {
+        try {
+            const bonjour = new Bonjour();
+            const browser = bonjour.find({ type: 'ewelink', protocol: 'tcp' });
+
+            const handleService = (service) => {
+                const deviceId = service.txt?.id || service.name?.split('_')?.[1];
+                if (!deviceId) return;
+
+                const cacheDevice = this.devicesCache.find(d => d.deviceid === deviceId);
+                if (!cacheDevice) return;
+
+                const deviceKey = cacheDevice.devicekey;
+                if (!deviceKey) return;
+
+                const txt = service.txt;
+                if (!txt) return;
+
+                // Concatenar los bloques data1, data2, data3, data4
+                const encryptedData = (txt.data1 || '') + (txt.data2 || '') + (txt.data3 || '') + (txt.data4 || '');
+                const iv = txt.iv;
+                if (!encryptedData || !iv) return;
+
+                try {
+                    const decryptedRaw = decryptionData(encryptedData, deviceKey, iv);
+                    if (!decryptedRaw) return;
+
+                    const payload = JSON.parse(decryptedRaw);
+
+                    let switchState = null;
+                    if (payload.switch) {
+                        switchState = payload.switch.toLowerCase(); // 'on' / 'off'
+                    } else if (payload.switches && Array.isArray(payload.switches)) {
+                        switchState = payload.switches[0].switch.toLowerCase();
+                    }
+
+                    if (switchState) {
+                        // Actualizar estado en la caché en memoria
+                        if (cacheDevice.params) {
+                            if (cacheDevice.params.switch) cacheDevice.params.switch = switchState;
+                            if (cacheDevice.params.switches && cacheDevice.params.switches[0]) {
+                                cacheDevice.params.switches[0].switch = switchState;
+                            }
+                        }
+
+                        console.log(`📡 [EwelinkManager] mDNS Detectado cambio físico en [${cacheDevice.name || deviceId}]: ${switchState}`);
+
+                        this.emit('stateChange', {
+                            deviceId,
+                            state: switchState
+                        });
+                    }
+                } catch (err) {
+                    // Ignorar errores de desencriptación (ej. claves no coincidentes)
+                }
+            };
+
+            browser.on('up', handleService);
+            browser.on('txt-update', handleService);
+
+            console.log('📡 [EwelinkManager] Escáner mDNS iniciado (escuchando cambios físicos locales eWelink)');
+        } catch (error) {
+            console.error('[EwelinkManager] Error iniciando escáner mDNS:', error.message);
         }
     }
 }
