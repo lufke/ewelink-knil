@@ -39,6 +39,11 @@ async function startBridge() {
             if (!err) console.log(`📡 Escuchando reportes nativos de Tasmota para traducción de estado`);
         });
 
+        // Escuchar el discovery nativo de Tasmota para publicar config en luces/+/config
+        client.subscribe('tasmota/discovery/+/config', (err) => {
+            if (!err) console.log(`📡 Suscrito a discovery nativo de Tasmota: tasmota/discovery/+/config`);
+        });
+
         // Publicar estado inicial de eWelink y Tuya
         publicarEstadoEwelink(client);
         publicarEstadoTuya(client);
@@ -50,7 +55,14 @@ async function startBridge() {
     client.on('message', async (topic, message) => {
         const payload = message.toString().toLowerCase();
 
-        // --- 1. Caso: Reportes nativos de Tasmota (stat/+/POWER) ---
+        // --- 1a. Discovery nativo de Tasmota (tasmota/discovery/<mac>/config) ---
+        // Publicamos config enriquecida en luces/<topic>/config
+        if (topic.startsWith('tasmota/discovery/') && topic.endsWith('/config')) {
+            publicarConfigTasmota(client, message.toString());
+            return;
+        }
+
+        // --- 1b. Reportes nativos de Tasmota (stat/+/POWER) ---
         // Traducimos de "stat/oficina/POWER" a "luces/oficina/state"
         if (topic.startsWith('stat/') && topic.endsWith('/POWER')) {
             const parts = topic.split('/');
@@ -149,6 +161,35 @@ function publicarEstadoTuya(client) {
         const est = equipo.estado ? equipo.estado.toLowerCase() : 'unknown';
         client.publish(`${MQTT_PREFIX}/${equipo.botId}/state`, est, { retain: true });
     });
+}
+
+/**
+ * Parsea el payload de tasmota/discovery/<mac>/config y publica
+ * un objeto de config limpio en luces/<topic>/config.
+ */
+function publicarConfigTasmota(client, rawMessage) {
+    try {
+        const data = JSON.parse(rawMessage);
+        const deviceTopic = data.t;
+        if (!deviceTopic) return;
+
+        const config = {
+            source:   'tasmota',
+            topic:    deviceTopic,
+            nombre:   (Array.isArray(data.fn) ? data.fn[0] : null) || data.dn || deviceTopic,
+            hostname: data.hn  || null,
+            ip:       data.ip  || null,
+            mac:      data.mac || null,
+            modelo:   data.md  || null,
+            firmware: data.sw  || null,
+        };
+
+        client.publish(`${MQTT_PREFIX}/${deviceTopic}/config`,    JSON.stringify(config), { retain: true });
+        client.publish(`${MQTT_PREFIX}/${deviceTopic}/available`, 'online',               { retain: true });
+        console.log(`[Tasmota Bridge] 📋 Config publicada: ${deviceTopic} ("${config.nombre}", ${config.ip || '?'})`);
+    } catch (e) {
+        console.warn('[Tasmota Bridge] Error parseando discovery payload:', e.message);
+    }
 }
 
 function imprimirDirectorioConsola() {
