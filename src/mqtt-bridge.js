@@ -198,7 +198,6 @@ function publicarConfigTasmota(client, rawMessage) {
         };
 
         client.publish(`${MQTT_PREFIX}/${deviceTopic}/config`,    JSON.stringify(config), { retain: true });
-        client.publish(`${MQTT_PREFIX}/${deviceTopic}/available`, 'online',               { retain: true });
         console.log(`[Tasmota Bridge] 📋 Config publicada: ${deviceTopic} ("${config.nombre}", ${config.ip || '?'})`);
     } catch (e) {
         console.warn('[Tasmota Bridge] Error parseando discovery payload:', e.message);
