@@ -128,10 +128,22 @@ class TuyaManager extends EventEmitter {
     getEquipos() {
         return this.devices
             .filter(d => !d.id.startsWith('ejemplo_'))
-            .map(d => ({
-                ...d,
-                botId: `${d.id}_${d.dps || 1}`
-            }));
+            .map(d => {
+                const friendlyName = d.nombre || d.name || d.id;
+                return {
+                    id: `${d.id}_${d.dps || 1}`,
+                    botId: `${d.id}_${d.dps || 1}`,
+                    nombre: friendlyName,
+                    name: friendlyName,
+                    source: 'tuya',
+                    dps: d.dps || 1,
+                    ip: d.ip || 'N/A',
+                    mac: d.mac || 'N/A',
+                    modelo: d.modelo || d.model || 'Tuya Switch',
+                    online: d.estado !== 'UNKNOWN',
+                    estado: d.estado ? d.estado.toLowerCase() : 'unknown'
+                };
+            });
     }
 
     async setPowerState(botId, state) {

@@ -130,15 +130,20 @@ class EwelinkManager extends EventEmitter {
     }
 
     getEquipos() {
-        return this.devicesCache.map(item => ({
-            nombre: item.name,
-            id: item.deviceid,
-            mac: item.extra?.extra?.staMac || 'N/A',
-            ip: this.getIP(item) || 'N/A',
-            modelo: item.extra?.extra?.model || 'N/A',
-            online: item.online,
-            estado: item.params?.switch || item.params?.switches?.[0]?.switch || 'unknown'
-        }));
+        return this.devicesCache.map(item => {
+            const friendlyName = item.name || 'N/A';
+            return {
+                id: item.deviceid,
+                nombre: friendlyName,
+                name: friendlyName,
+                source: 'ewelink',
+                mac: item.extra?.extra?.staMac || 'N/A',
+                ip: this.getIP(item) || 'N/A',
+                modelo: item.extra?.extra?.model || 'N/A',
+                online: item.online,
+                estado: item.params?.switch || item.params?.switches?.[0]?.switch || 'unknown'
+            };
+        });
     }
 
     getIP(device) {

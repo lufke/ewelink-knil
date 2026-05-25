@@ -153,8 +153,17 @@ class TasmotaManager {
 
     getEquipos() {
         return Array.from(this.devices.values()).map(d => ({
-            ...d,
-            source: 'tasmota'
+            id: d.id,
+            nombre: d.nombre,
+            name: d.nombre,
+            source: 'tasmota',
+            topic: d.topic,
+            ip: d.ip || 'N/A',
+            mac: d.mac || 'N/A',
+            modelo: d.modelo || 'Tasmota Device',
+            firmware: d.firmware || 'N/A',
+            online: d.online,
+            estado: d.estado ? d.estado.toLowerCase() : 'unknown'
         }));
     }
 

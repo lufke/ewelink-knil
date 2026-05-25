@@ -198,10 +198,13 @@ function publicarConfigTasmota(client, rawMessage) {
         const deviceTopic = data.t;
         if (!deviceTopic) return;
 
+        const friendlyName = (Array.isArray(data.fn) ? data.fn[0] : null) || data.dn || deviceTopic;
         const config = {
+            id:       deviceTopic,
+            nombre:   friendlyName,
+            name:     friendlyName,
             source:   'tasmota',
             topic:    deviceTopic,
-            nombre:   (Array.isArray(data.fn) ? data.fn[0] : null) || data.dn || deviceTopic,
             hostname: data.hn  || null,
             ip:       data.ip  || null,
             mac:      data.mac || null,
