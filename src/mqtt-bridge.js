@@ -34,9 +34,14 @@ async function startBridge() {
             if (!err) console.log(`📡 Suscrito a comandos unificados: ${MQTT_PREFIX}/+/set`);
         });
 
-        // Escuchar los reportes nativos de Tasmota para reflejarlos en nuestro tópico unificado luces/+/state
+        // Traducir stat/+/POWER → luces/+/state
         client.subscribe('stat/+/POWER', (err) => {
-            if (!err) console.log(`📡 Escuchando reportes nativos de Tasmota para traducción de estado`);
+            if (!err) console.log(`📡 Suscrito a estado Tasmota: stat/+/POWER`);
+        });
+
+        // Traducir tele/+/LWT → luces/+/available  (Online / Offline)
+        client.subscribe('tele/+/LWT', (err) => {
+            if (!err) console.log(`📡 Suscrito a disponibilidad Tasmota: tele/+/LWT`);
         });
 
         // Escuchar el discovery nativo de Tasmota para publicar config en luces/+/config
@@ -56,21 +61,29 @@ async function startBridge() {
         const payload = message.toString().toLowerCase();
 
         // --- 1a. Discovery nativo de Tasmota (tasmota/discovery/<mac>/config) ---
-        // Publicamos config enriquecida en luces/<topic>/config
         if (topic.startsWith('tasmota/discovery/') && topic.endsWith('/config')) {
             publicarConfigTasmota(client, message.toString());
             return;
         }
 
-        // --- 1b. Reportes nativos de Tasmota (stat/+/POWER) ---
-        // Traducimos de "stat/oficina/POWER" a "luces/oficina/state"
+        // --- 1b. LWT de Tasmota (tele/+/LWT) → luces/+/available ---
+        // Payload: "Online" u "Offline"
+        if (topic.startsWith('tele/') && topic.endsWith('/LWT')) {
+            const deviceTopic = topic.split('/')[1];
+            if (deviceTopic) {
+                const available = message.toString().toLowerCase() === 'online' ? 'online' : 'offline';
+                client.publish(`${MQTT_PREFIX}/${deviceTopic}/available`, available, { retain: true });
+                console.log(`[Tasmota Bridge] 📶 LWT [${deviceTopic}]: ${available}`);
+            }
+            return;
+        }
+
+        // --- 1c. Estado de Tasmota (stat/+/POWER) → luces/+/state ---
         if (topic.startsWith('stat/') && topic.endsWith('/POWER')) {
-            const parts = topic.split('/');
-            const deviceTopic = parts[1]; // ej: "oficina"
+            const deviceTopic = topic.split('/')[1];
             if (deviceTopic) {
                 client.publish(`${MQTT_PREFIX}/${deviceTopic}/state`, payload, { retain: true });
-                client.publish(`${MQTT_PREFIX}/${deviceTopic}/available`, 'online', { retain: true });
-                console.log(`[Tasmota Bridge] 🔄 Traduciendo estado: ${deviceTopic} -> ${payload}`);
+                console.log(`[Tasmota Bridge] 🔄 POWER [${deviceTopic}]: ${payload}`);
             }
             return;
         }
