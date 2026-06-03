@@ -15,6 +15,8 @@ class TuyaManager extends EventEmitter {
         this.configPath = path.resolve('tuya-devices.json');
         this.devices = [];
         this.connections = new Map(); // deviceId -> TuyAPI instance
+        this.connectHandlers = new Map();
+        this.reconnectTimers = new Map();
         this.loadDevices();
         this.startTcpConnections();
     }
@@ -41,6 +43,47 @@ class TuyaManager extends EventEmitter {
         }
     }
 
+    saveDevices() {
+        try {
+            const cleanDevices = this.devices.map(({ estado, online, source, ...config }) => config);
+            fs.writeFileSync(this.configPath, JSON.stringify(cleanDevices, null, 2) + '\n');
+            console.log('💾 [TuyaManager] tuya-devices.json actualizado con IPs descubiertas.');
+        } catch (err) {
+            console.error('❌ [TuyaManager] Error guardando tuya-devices.json:', err.message);
+        }
+    }
+
+    updateDeviceIp(deviceId, ip) {
+        if (!ip) return false;
+
+        let changed = false;
+        this.devices.forEach(dev => {
+            if (dev.id !== deviceId) return;
+            if (dev.ip !== ip) {
+                dev.ip = ip;
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            this.saveDevices();
+        }
+
+        return changed;
+    }
+
+    scheduleReconnect(deviceId, connectDevice, delayMs) {
+        if (this.reconnectTimers.has(deviceId)) return;
+
+        const timer = setTimeout(() => {
+            this.reconnectTimers.delete(deviceId);
+            connectDevice();
+        }, delayMs);
+
+        if (timer.unref) timer.unref();
+        this.reconnectTimers.set(deviceId, timer);
+    }
+
     startTcpConnections() {
         // Agrupar dispositivos por su ID físico único
         const uniqueDevices = [];
@@ -64,26 +107,42 @@ class TuyaManager extends EventEmitter {
 
             const connectDevice = async () => {
                 try {
-                    if (!devConfig.ip) {
-                        await device.find({ timeout: 10 });
-                    }
+                    if (device.isConnected()) return;
+
                     await device.connect();
                 } catch (err) {
-                    console.warn(`⚠️ [TuyaManager TCP] Error conectando a ${name}: ${err.message}. Reintentando en 15s...`);
-                    setTimeout(connectDevice, 15000);
+                    console.warn(`⚠️ [TuyaManager TCP] Error conectando a ${name} (${devConfig.ip || 'sin IP'}): ${err.message}. Intentando redescubrir...`);
+
+                    try {
+                        await device.find({ timeout: 10 });
+                        const discoveredIp = device.device?.ip;
+                        if (discoveredIp) {
+                            console.log(`🔎 [TuyaManager TCP] ${name} redescubierto en ${discoveredIp}`);
+                            devConfig.ip = discoveredIp;
+                            this.updateDeviceIp(devConfig.id, discoveredIp);
+                        }
+
+                        await device.connect();
+                    } catch (discoverErr) {
+                        this.setPhysicalDeviceOnline(devConfig.id, false);
+                        console.warn(`⚠️ [TuyaManager TCP] No se pudo redescubrir/conectar ${name}: ${discoverErr.message}. Reintentando en 15s...`);
+                        this.scheduleReconnect(devConfig.id, connectDevice, 15000);
+                    }
                 }
             };
+            this.connectHandlers.set(devConfig.id, connectDevice);
 
             device.on('connected', () => {
                 console.log(`✅ [TuyaManager TCP] Conectado a ${name} (${device.device.ip})`);
                 devConfig.ip = device.device.ip;
+                this.updateDeviceIp(devConfig.id, device.device.ip);
                 this.setPhysicalDeviceOnline(devConfig.id, true, device.device.ip);
             });
 
             device.on('disconnected', () => {
                 console.log(`❌ [TuyaManager TCP] Desconectado de ${name}. Reintentando en 10s...`);
                 this.setPhysicalDeviceOnline(devConfig.id, false);
-                setTimeout(connectDevice, 10000);
+                this.scheduleReconnect(devConfig.id, connectDevice, 10000);
             });
 
             device.on('error', (err) => {
@@ -128,6 +187,64 @@ class TuyaManager extends EventEmitter {
             // Guardar la conexión persistente
             this.connections.set(devConfig.id, device);
         });
+    }
+
+    async refreshDiscovery() {
+        const uniqueDevices = [];
+        this.devices.forEach(d => {
+            if (!uniqueDevices.some(ud => ud.id === d.id)) {
+                uniqueDevices.push(d);
+            }
+        });
+
+        const results = [];
+        for (const devConfig of uniqueDevices) {
+            const name = devConfig.nombre || devConfig.name || devConfig.id;
+            const persistentDevice = this.connections.get(devConfig.id);
+
+            try {
+                if (persistentDevice?.isConnected()) {
+                    this.setPhysicalDeviceOnline(devConfig.id, true, persistentDevice.device?.ip);
+                    results.push({ id: devConfig.id, name, status: 'online', ip: persistentDevice.device?.ip || devConfig.ip || null });
+                    continue;
+                }
+
+                const device = persistentDevice || new TuyAPI({
+                    id: devConfig.id,
+                    key: devConfig.key,
+                    ip: devConfig.ip || undefined,
+                    version: devConfig.version || '3.4',
+                    issueGetOnConnect: false
+                });
+
+                await device.find({ timeout: 10 });
+                const discoveredIp = device.device?.ip;
+                if (discoveredIp) {
+                    devConfig.ip = discoveredIp;
+                    this.updateDeviceIp(devConfig.id, discoveredIp);
+                }
+
+                const connectDevice = this.connectHandlers.get(devConfig.id);
+                if (connectDevice) connectDevice();
+
+                this.setPhysicalDeviceOnline(devConfig.id, true, discoveredIp || devConfig.ip);
+                results.push({ id: devConfig.id, name, status: 'online', ip: discoveredIp || devConfig.ip || null });
+            } catch (err) {
+                this.setPhysicalDeviceOnline(devConfig.id, false);
+                results.push({ id: devConfig.id, name, status: 'offline', error: err.message });
+            }
+        }
+
+        const equipos = this.getEquipos();
+        const online = equipos.filter(e => e.online).length;
+        return {
+            success: true,
+            devices: equipos.length,
+            online,
+            offline: equipos.length - online,
+            physicalDevices: uniqueDevices.length,
+            results
+        };
     }
 
     setPhysicalDeviceOnline(deviceId, online, ip = null) {
@@ -209,18 +326,29 @@ class TuyaManager extends EventEmitter {
         });
 
         try {
-            if (!devConfig.ip) {
+            try {
+                await device.connect();
+            } catch (connectErr) {
+                console.warn(`⚠️ [TuyaManager Fallback] Falló IP conocida para ${name}: ${connectErr.message}. Redescubriendo...`);
                 await device.find({ timeout: 10 });
+                const discoveredIp = device.device?.ip;
+                if (discoveredIp) {
+                    devConfig.ip = discoveredIp;
+                    this.updateDeviceIp(devConfig.id, discoveredIp);
+                }
+                await device.connect();
             }
-            await device.connect();
+
             await device.set({ dps: dps, set: value });
             await device.disconnect();
 
             devConfig.estado = state.toUpperCase();
+            this.setPhysicalDeviceOnline(devConfig.id, true, devConfig.ip);
             console.log(`✅ [TuyaManager Fallback] ${name} cambiado a ${state}`);
             return { status: 'ok', state };
         } catch (err) {
             console.error(`❌ [TuyaManager Fallback] Error controlando dispositivo ${name}:`, err.message);
+            this.setPhysicalDeviceOnline(devConfig.id, false);
             try {
                 await device.disconnect();
             } catch (e) { }

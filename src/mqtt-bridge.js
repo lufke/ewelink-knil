@@ -8,6 +8,8 @@ dotenv.config();
 
 const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://localhost';
 const MQTT_PREFIX = 'luces';
+const BRIDGE_REFRESH_TOPIC = `${MQTT_PREFIX}/_bridge/refresh`;
+const BRIDGE_REFRESH_STATUS_TOPIC = `${MQTT_PREFIX}/_bridge/refresh/status`;
 
 async function startBridge() {
     console.log('--- Iniciando Puente IoT Totalmente Unificado a MQTT ---');
@@ -56,6 +58,10 @@ async function startBridge() {
             if (!err) console.log(`📡 Suscrito a comandos unificados: ${MQTT_PREFIX}/+/set`);
         });
 
+        client.subscribe(BRIDGE_REFRESH_TOPIC, (err) => {
+            if (!err) console.log(`📡 Suscrito a refresco manual: ${BRIDGE_REFRESH_TOPIC}`);
+        });
+
         // Traducir stat/+/POWER → luces/+/state
         client.subscribe('stat/+/POWER', (err) => {
             if (!err) console.log(`📡 Suscrito a estado Tasmota: stat/+/POWER`);
@@ -81,6 +87,11 @@ async function startBridge() {
 
     client.on('message', async (topic, message) => {
         const payload = message.toString().toLowerCase();
+
+        if (topic === BRIDGE_REFRESH_TOPIC) {
+            await refrescarDesdeMqtt(client, payload);
+            return;
+        }
 
         // --- 1a. Discovery nativo de Tasmota (tasmota/discovery/<mac>/config) ---
         if (topic.startsWith('tasmota/discovery/') && topic.endsWith('/config')) {
@@ -172,6 +183,53 @@ async function startBridge() {
     client.on('error', (err) => {
         console.error('❌ Error en cliente MQTT del puente:', err);
     });
+}
+
+async function refrescarDesdeMqtt(client, payload) {
+    const command = payload.trim() || 'arp';
+    if (!['arp', 'ewelink', 'tuya', 'all'].includes(command)) {
+        client.publish(BRIDGE_REFRESH_STATUS_TOPIC, JSON.stringify({
+            status: 'error',
+            command,
+            error: "Comando invalido. Usa 'arp', 'ewelink', 'tuya' o 'all'.",
+            ts: new Date().toISOString()
+        }));
+        console.warn(`[Puente Unificado] Refresco manual inválido: ${command}`);
+        return;
+    }
+
+    try {
+        console.log(`[Puente Unificado] Refresco manual solicitado: ${command}`);
+        const response = {
+            status: 'ok',
+            command,
+            ts: new Date().toISOString()
+        };
+
+        if (command === 'arp' || command === 'ewelink' || command === 'all') {
+            response.ewelink = await ewelinkManager.refreshArpAvailability();
+            publicarEstadoEwelink(client);
+        }
+
+        if (command === 'tuya' || command === 'all') {
+            response.tuya = await tuyaManager.refreshDiscovery();
+            publicarEstadoTuya(client);
+        }
+
+        client.publish(BRIDGE_REFRESH_STATUS_TOPIC, JSON.stringify(response));
+
+        const ewelinkSummary = response.ewelink ? ` eWelink=${response.ewelink.online}/${response.ewelink.devices}` : '';
+        const tuyaSummary = response.tuya ? ` Tuya=${response.tuya.online}/${response.tuya.devices}` : '';
+        console.log(`[Puente Unificado] Refresco manual OK:${ewelinkSummary}${tuyaSummary}`);
+    } catch (error) {
+        client.publish(BRIDGE_REFRESH_STATUS_TOPIC, JSON.stringify({
+            status: 'error',
+            command,
+            error: error.message,
+            ts: new Date().toISOString()
+        }));
+        console.error('[Puente Unificado] Error en refresco manual:', error.message);
+    }
 }
 
 function publicarEstadoEwelink(client) {

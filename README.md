@@ -4,10 +4,11 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
 
 ## 🚀 Características
 
-- **Gestor eWelink (LAN + Cloud):** Control primario vía red local (Zeroconf/ARP). Al iniciar recarga la tabla ARP para resolver IPs nuevas después de cortes de luz y la refresca periódicamente. Si el dispositivo no responde en LAN, hace *fallback* automático a la nube.
+- **Gestor eWelink (LAN + Cloud):** Control primario vía red local (Zeroconf/ARP). Al iniciar recarga la tabla ARP para resolver IPs nuevas después de cortes de luz y la refresca periódicamente. Si el dispositivo no responde en LAN, hace *fallback* automático a la nube con timeout configurable para no bloquear si no hay Internet.
 - **Integración Tasmota:** Descubrimiento enriquecido mediante el tópico nativo `tasmota/discovery/+/config` (nombre real, IP, modelo, firmware) y seguimiento de estado en tiempo real vía `tele/+/LWT`, `stat/+/POWER` y `tele/+/STATE`.
-- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS), conexión persistente y disponibilidad `online/offline`.
+- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS), conexión persistente, disponibilidad `online/offline` y redescubrimiento de IP por UDP cuando cambia la red.
 - **Estados físicos reales:** eWelink y Tuya publican `state` solo cuando se detecta un cambio físico real. Los comandos MQTT no se republcan como estado confirmado.
+- **Refresco manual por MQTT:** Permite solicitar recarga de ARP eWelink y redescubrimiento Tuya desde cualquier cliente MQTT después de cortes de luz o cambios de IP.
 - **Tópicos MQTT unificados:** Todos los dispositivos (sin importar la marca) quedan disponibles bajo el prefijo `luces/<id>/`.
 
 ## 📋 Requisitos
@@ -37,6 +38,10 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
 
    # Refresco periódico de ARP para eWelink (milisegundos)
    EWELINK_ARP_REFRESH_INTERVAL_MS=300000
+
+   # Cloud eWelink opcional
+   EWELINK_CLOUD_ENABLED=true
+   EWELINK_CLOUD_TIMEOUT_MS=7000
    ```
 
 3. Configura tus dispositivos Tuya en `tuya-devices.json` (ver ejemplo en `.env.example`). Para obtener las llaves locales:
@@ -84,13 +89,64 @@ Todos los dispositivos quedan accesibles bajo el prefijo `luces/`:
 | `luces/<id>/state` | Lectura | Estado físico real (`on` / `off`) — retenido |
 | `luces/<id>/available` | Lectura | Disponibilidad (`online` / `offline`) — retenido |
 | `luces/<id>/config` | Lectura | Metadatos del dispositivo en JSON — retenido |
+| `luces/_bridge/refresh` | Escritura | Solicita refresco manual (`arp`, `ewelink`, `tuya` o `all`) |
+| `luces/_bridge/refresh/status` | Lectura | Resultado JSON del último refresco manual |
 
 ### Estado vs disponibilidad
 
 - `luces/<id>/state` se publica cuando el bridge detecta un cambio real del equipo: mDNS/local para eWelink, TCP persistente para Tuya y `stat/+/POWER` para Tasmota.
 - Al reiniciar la app no se republica el estado retenido de eWelink/Tuya para evitar falsos cambios.
-- `luces/<id>/available` indica si el equipo está alcanzable localmente. eWelink usa ARP/mDNS, Tuya usa la conexión TCP persistente y Tasmota usa `tele/+/LWT`.
+- `luces/<id>/available` indica si el equipo está alcanzable localmente. eWelink usa ARP/mDNS, Tuya usa la conexión TCP persistente/redescubrimiento UDP y Tasmota usa `tele/+/LWT`.
 - `EWELINK_ARP_REFRESH_INTERVAL_MS` controla cada cuánto se recarga la tabla ARP de eWelink. El valor por defecto en la app es `60000` ms si no se define.
+
+### Operación sin Internet
+
+- Tuya y Tasmota siguen funcionando localmente si el broker MQTT está en la red local.
+- eWelink arranca con LAN/ARP aunque Cloud no responda. La autenticación Cloud se corta por timeout y no bloquea el inicio.
+- `EWELINK_CLOUD_TIMEOUT_MS` define cuánto espera eWelink Cloud antes de continuar en modo local. Por defecto son `7000` ms.
+- `EWELINK_CLOUD_ENABLED=false` desactiva completamente el login y fallback Cloud para operar solo por LAN.
+- `npm run cache` y `refreshCache()` completo de eWelink siguen requiriendo Cloud porque regeneran `devices-cache.json` desde la cuenta eWelink.
+
+### Refresco manual
+
+Para forzar una recarga de la tabla ARP eWelink desde un cliente MQTT:
+
+```bash
+mosquitto_pub -h localhost -t luces/_bridge/refresh -m arp
+```
+
+Payloads aceptados:
+
+| Payload | Acción |
+|---------|--------|
+| `arp` | Recarga la tabla ARP eWelink y recalcula disponibilidad |
+| `ewelink` | Alias de `arp` |
+| `tuya` | Redescubre IPs Tuya por UDP, actualiza disponibilidad y persiste IPs nuevas en `tuya-devices.json` |
+| `all` | Ejecuta refresco eWelink/ARP y redescubrimiento Tuya |
+
+El bridge responde en `luces/_bridge/refresh/status` con un JSON como:
+
+```json
+{
+  "status": "ok",
+  "command": "all",
+  "ts": "2026-06-03T12:00:00.000Z",
+  "ewelink": {
+    "success": true,
+    "arpEntries": 12,
+    "devices": 4,
+    "online": 3,
+    "offline": 1
+  },
+  "tuya": {
+    "success": true,
+    "devices": 3,
+    "online": 3,
+    "offline": 0,
+    "physicalDevices": 1
+  }
+}
+```
 
 ### Tópicos nativos de Tasmota (internos)
 

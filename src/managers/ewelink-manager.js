@@ -12,6 +12,18 @@ import fs from 'fs/promises';
 import os from 'os';
 
 const EWELINK_ARP_REFRESH_INTERVAL_MS = Number(process.env.EWELINK_ARP_REFRESH_INTERVAL_MS || 60000);
+const EWELINK_CLOUD_ENABLED = process.env.EWELINK_CLOUD_ENABLED !== 'false';
+const EWELINK_CLOUD_TIMEOUT_MS = Number(process.env.EWELINK_CLOUD_TIMEOUT_MS || 7000);
+
+function withTimeout(promise, timeoutMs, label) {
+    let timeout;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label} excedió ${timeoutMs}ms`)), timeoutMs);
+        if (timeout.unref) timeout.unref();
+    });
+
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout));
+}
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -77,13 +89,17 @@ class EwelinkManager extends EventEmitter {
             });
 
             // Autenticar Cloud para tener Fallback listo
-            console.log('[EwelinkManager] Autenticando en eWelink Cloud...');
-            try {
-                await this.cloudConnection.getCredentials();
-                this.isAuthenticated = true;
-                console.log('[EwelinkManager] ✅ Autenticado en Cloud (Fallback listo).');
-            } catch (e) {
-                console.error('[EwelinkManager] ❌ Error autenticando en Cloud:', e.message);
+            if (EWELINK_CLOUD_ENABLED) {
+                console.log(`[EwelinkManager] Autenticando en eWelink Cloud (timeout ${EWELINK_CLOUD_TIMEOUT_MS}ms)...`);
+                try {
+                    await withTimeout(this.cloudConnection.getCredentials(), EWELINK_CLOUD_TIMEOUT_MS, 'Autenticación eWelink Cloud');
+                    this.isAuthenticated = true;
+                    console.log('[EwelinkManager] ✅ Autenticado en Cloud (Fallback listo).');
+                } catch (e) {
+                    console.warn('[EwelinkManager] ⚠️ Cloud no disponible; continuando solo con LAN:', e.message);
+                }
+            } else {
+                console.log('[EwelinkManager] Cloud desactivado por EWELINK_CLOUD_ENABLED=false. Modo LAN solamente.');
             }
 
             // Iniciar escaneo mDNS local para detectar pulsaciones de botones físicos
@@ -100,8 +116,12 @@ class EwelinkManager extends EventEmitter {
     async refreshCache() {
         console.log('[EwelinkManager] Forzando actualización total...');
         try {
+            if (!EWELINK_CLOUD_ENABLED) {
+                return { success: false, error: 'Cloud desactivado por EWELINK_CLOUD_ENABLED=false' };
+            }
+
             if (!this.isAuthenticated) {
-                await this.cloudConnection.getCredentials();
+                await withTimeout(this.cloudConnection.getCredentials(), EWELINK_CLOUD_TIMEOUT_MS, 'Autenticación eWelink Cloud');
                 this.isAuthenticated = true;
             }
 
@@ -153,6 +173,21 @@ class EwelinkManager extends EventEmitter {
         this.devicesCache.forEach(device => {
             this.setOnlineStatus(device.deviceid, this.isDeviceOnline(device));
         });
+    }
+
+    async refreshArpAvailability() {
+        await this.reloadArpTable();
+        this.publishOnlineStatusFromArp();
+
+        const equipos = this.getEquipos();
+        const online = equipos.filter(e => e.online).length;
+        return {
+            success: true,
+            arpEntries: this.arpTable.length,
+            devices: equipos.length,
+            online,
+            offline: equipos.length - online
+        };
     }
 
     startAvailabilityMonitor() {
@@ -225,7 +260,11 @@ class EwelinkManager extends EventEmitter {
 
             if (this.isAuthenticated) {
                 try {
-                    const res = await this.cloudConnection.setDevicePowerState(deviceId, state);
+                    const res = await withTimeout(
+                        this.cloudConnection.setDevicePowerState(deviceId, state),
+                        EWELINK_CLOUD_TIMEOUT_MS,
+                        'Control eWelink Cloud'
+                    );
                     console.log(`[EwelinkManager] ✅ Control CLOUD exitoso para ${deviceId}`);
                     return res;
                 } catch (cloudErr) {
