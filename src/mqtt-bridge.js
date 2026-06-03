@@ -32,10 +32,20 @@ async function startBridge() {
         console.log(`[Puente Unificado] eWelink Local -> Publicado estado [${deviceId}]: ${state}`);
     });
 
+    ewelinkManager.on('availabilityChange', ({ deviceId, available }) => {
+        client.publish(`${MQTT_PREFIX}/${deviceId}/available`, available, { retain: true });
+        console.log(`[Puente Unificado] eWelink Local -> Disponibilidad [${deviceId}]: ${available}`);
+    });
+
     // Escuchar cambios de estado físicos locales para Tuya
     tuyaManager.on('stateChange', ({ botId, state }) => {
         client.publish(`${MQTT_PREFIX}/${botId}/state`, state, { retain: true });
         console.log(`[Puente Unificado] Tuya Local -> Publicado estado [${botId}]: ${state}`);
+    });
+
+    tuyaManager.on('availabilityChange', ({ botId, available }) => {
+        client.publish(`${MQTT_PREFIX}/${botId}/available`, available, { retain: true });
+        console.log(`[Puente Unificado] Tuya Local -> Disponibilidad [${botId}]: ${available}`);
     });
 
     client.on('connect', () => {
@@ -61,7 +71,7 @@ async function startBridge() {
             if (!err) console.log(`📡 Suscrito a discovery nativo de Tasmota: tasmota/discovery/+/config`);
         });
 
-        // Publicar estado inicial de eWelink y Tuya
+        // Publicar config y disponibilidad inicial. El estado se publica solo ante cambios físicos reales.
         publicarEstadoEwelink(client);
         publicarEstadoTuya(client);
 
@@ -120,7 +130,6 @@ async function startBridge() {
                 const response = await tuyaManager.setPowerState(deviceId, payload);
                 if (response.status === 'ok') {
                     console.log(`[Puente Unificado] OK -> Tuya [${deviceId}] cambiado a ${payload}`);
-                    client.publish(`${MQTT_PREFIX}/${deviceId}/state`, payload, { retain: true });
                 } else {
                     console.error(`[Puente Unificado] Error Tuya [${deviceId}]:`, response);
                 }
@@ -137,7 +146,6 @@ async function startBridge() {
                 const response = await ewelinkManager.setPowerState(deviceId, payload);
                 if (response.status === 'ok' || response.state === payload) {
                     console.log(`[Puente Unificado] OK -> eWelink [${deviceId}] cambiado a ${payload}`);
-                    client.publish(`${MQTT_PREFIX}/${deviceId}/state`, payload, { retain: true });
                 } else {
                     console.error(`[Puente Unificado] Error eWelink [${deviceId}]:`, response);
                 }
@@ -169,22 +177,16 @@ async function startBridge() {
 function publicarEstadoEwelink(client) {
     const equipos = ewelinkManager.getEquipos();
     equipos.forEach(equipo => {
-        client.publish(`${MQTT_PREFIX}/${equipo.id}/available`, 'online', { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.id}/available`, equipo.online ? 'online' : 'offline', { retain: true });
         client.publish(`${MQTT_PREFIX}/${equipo.id}/config`, JSON.stringify(equipo), { retain: true });
-        
-        const est = equipo.estado ? equipo.estado.toLowerCase() : 'unknown';
-        client.publish(`${MQTT_PREFIX}/${equipo.id}/state`, est, { retain: true });
     });
 }
 
 function publicarEstadoTuya(client) {
     const equipos = tuyaManager.getEquipos();
     equipos.forEach(equipo => {
-        client.publish(`${MQTT_PREFIX}/${equipo.botId}/available`, 'online', { retain: true });
+        client.publish(`${MQTT_PREFIX}/${equipo.botId}/available`, equipo.online ? 'online' : 'offline', { retain: true });
         client.publish(`${MQTT_PREFIX}/${equipo.botId}/config`, JSON.stringify(equipo), { retain: true });
-        
-        const est = equipo.estado ? equipo.estado.toLowerCase() : 'unknown';
-        client.publish(`${MQTT_PREFIX}/${equipo.botId}/state`, est, { retain: true });
     });
 }
 

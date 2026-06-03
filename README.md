@@ -4,9 +4,10 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
 
 ## 🚀 Características
 
-- **Gestor eWelink (LAN + Cloud):** Control primario vía red local (Zeroconf/ARP). Si el dispositivo no responde en LAN, hace *fallback* automático a la nube.
+- **Gestor eWelink (LAN + Cloud):** Control primario vía red local (Zeroconf/ARP). Al iniciar recarga la tabla ARP para resolver IPs nuevas después de cortes de luz y la refresca periódicamente. Si el dispositivo no responde en LAN, hace *fallback* automático a la nube.
 - **Integración Tasmota:** Descubrimiento enriquecido mediante el tópico nativo `tasmota/discovery/+/config` (nombre real, IP, modelo, firmware) y seguimiento de estado en tiempo real vía `tele/+/LWT`, `stat/+/POWER` y `tele/+/STATE`.
-- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS).
+- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS), conexión persistente y disponibilidad `online/offline`.
+- **Estados físicos reales:** eWelink y Tuya publican `state` solo cuando se detecta un cambio físico real. Los comandos MQTT no se republcan como estado confirmado.
 - **Tópicos MQTT unificados:** Todos los dispositivos (sin importar la marca) quedan disponibles bajo el prefijo `luces/<id>/`.
 
 ## 📋 Requisitos
@@ -33,6 +34,9 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
 
    # Broker MQTT
    MQTT_BROKER=mqtt://localhost:1883
+
+   # Refresco periódico de ARP para eWelink (milisegundos)
+   EWELINK_ARP_REFRESH_INTERVAL_MS=300000
    ```
 
 3. Configura tus dispositivos Tuya en `tuya-devices.json` (ver ejemplo en `.env.example`). Para obtener las llaves locales:
@@ -77,9 +81,16 @@ Todos los dispositivos quedan accesibles bajo el prefijo `luces/`:
 | Tópico | Dirección | Descripción |
 |--------|-----------|-------------|
 | `luces/<id>/set` | Escritura | Enviar `on` u `off` para controlar el dispositivo |
-| `luces/<id>/state` | Lectura | Estado actual (`on` / `off`) — retenido |
-| `luces/<id>/available` | Lectura | Disponibilidad (`online`) — retenido |
+| `luces/<id>/state` | Lectura | Estado físico real (`on` / `off`) — retenido |
+| `luces/<id>/available` | Lectura | Disponibilidad (`online` / `offline`) — retenido |
 | `luces/<id>/config` | Lectura | Metadatos del dispositivo en JSON — retenido |
+
+### Estado vs disponibilidad
+
+- `luces/<id>/state` se publica cuando el bridge detecta un cambio real del equipo: mDNS/local para eWelink, TCP persistente para Tuya y `stat/+/POWER` para Tasmota.
+- Al reiniciar la app no se republica el estado retenido de eWelink/Tuya para evitar falsos cambios.
+- `luces/<id>/available` indica si el equipo está alcanzable localmente. eWelink usa ARP/mDNS, Tuya usa la conexión TCP persistente y Tasmota usa `tele/+/LWT`.
+- `EWELINK_ARP_REFRESH_INTERVAL_MS` controla cada cuánto se recarga la tabla ARP de eWelink. El valor por defecto en la app es `60000` ms si no se define.
 
 ### Tópicos nativos de Tasmota (internos)
 

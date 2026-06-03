@@ -11,6 +11,8 @@ const { APP_ID, APP_SECRET, EWELINK_EMAIL, EWELINK_PASSWORD } = process.env;
 import fs from 'fs/promises';
 import os from 'os';
 
+const EWELINK_ARP_REFRESH_INTERVAL_MS = Number(process.env.EWELINK_ARP_REFRESH_INTERVAL_MS || 60000);
+
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
@@ -31,6 +33,8 @@ class EwelinkManager extends EventEmitter {
         this.connection = null;
         this.cloudConnection = null;
         this.isAuthenticated = false;
+        this.onlineByDeviceId = new Map();
+        this.arpRefreshTimer = null;
     }
 
     async init() {
@@ -47,7 +51,7 @@ class EwelinkManager extends EventEmitter {
                 this.devicesCache = [];
             }
 
-            // Cargar ARP (IPs locales)
+            // Cargar ARP (IPs locales) desde disco como fallback
             try {
                 const arpData = await fs.readFile('./arp-table.json', 'utf8');
                 this.arpTable = JSON.parse(arpData);
@@ -55,6 +59,9 @@ class EwelinkManager extends EventEmitter {
             } catch (e) {
                 this.arpTable = [];
             }
+
+            await this.reloadArpTable();
+            this.refreshOnlineStatus();
 
             // Inicializar conexiones
             this.connection = new eWelink({
@@ -79,20 +86,9 @@ class EwelinkManager extends EventEmitter {
                 console.error('[EwelinkManager] ❌ Error autenticando en Cloud:', e.message);
             }
 
-            // Intentar un refresh de ARP en segundo plano para actualizar IPs
-            console.log('[EwelinkManager] Iniciando escaneo ARP en segundo plano...');
-            Zeroconf.getArpTable(getLocalIp()).then(table => {
-                this.arpTable = table;
-                this.connection.arpTable = table;
-                console.log(`[EwelinkManager] 🔄 Tabla ARP actualizada dinámicamente: ${table.length} dispositivos encontrados.`);
-                // Guardar para la próxima vez
-                fs.writeFile('./arp-table.json', JSON.stringify(table, null, 2)).catch(() => { });
-            }).catch(e => {
-                console.warn('[EwelinkManager] ⚠️ Falló escaneo ARP dinámico:', e.message);
-            });
-
             // Iniciar escaneo mDNS local para detectar pulsaciones de botones físicos
             this.startMdnsListener();
+            this.startAvailabilityMonitor();
 
             return true;
         } catch (error) {
@@ -110,12 +106,11 @@ class EwelinkManager extends EventEmitter {
             }
 
             await this.cloudConnection.saveDevicesCache();
-            const table = await Zeroconf.getArpTable(getLocalIp());
-            this.arpTable = table;
-            await fs.writeFile('./arp-table.json', JSON.stringify(table, null, 2));
+            await this.reloadArpTable();
 
             const cacheData = await fs.readFile('./devices-cache.json', 'utf8');
             this.devicesCache = JSON.parse(cacheData);
+            this.refreshOnlineStatus();
 
             this.connection = new eWelink({
                 devicesCache: this.devicesCache,
@@ -126,6 +121,59 @@ class EwelinkManager extends EventEmitter {
         } catch (error) {
             console.error('[EwelinkManager] Error en refreshCache:', error);
             return { success: false, error: error.message };
+        }
+    }
+
+    async reloadArpTable() {
+        try {
+            console.log('[EwelinkManager] Recargando tabla ARP local...');
+            const table = await Zeroconf.getArpTable(getLocalIp());
+            this.arpTable = table;
+            if (this.connection) this.connection.arpTable = table;
+            await fs.writeFile('./arp-table.json', JSON.stringify(table, null, 2));
+            console.log(`[EwelinkManager] 🔄 Tabla ARP actualizada: ${table.length} dispositivos encontrados.`);
+            return table;
+        } catch (e) {
+            console.warn(`[EwelinkManager] ⚠️ Falló recarga ARP; usando tabla guardada (${this.arpTable.length} entradas): ${e.message}`);
+            return this.arpTable;
+        }
+    }
+
+    isDeviceOnline(device) {
+        return Boolean(this.getIP(device));
+    }
+
+    refreshOnlineStatus() {
+        this.devicesCache.forEach(device => {
+            this.onlineByDeviceId.set(device.deviceid, this.isDeviceOnline(device));
+        });
+    }
+
+    publishOnlineStatusFromArp() {
+        this.devicesCache.forEach(device => {
+            this.setOnlineStatus(device.deviceid, this.isDeviceOnline(device));
+        });
+    }
+
+    startAvailabilityMonitor() {
+        if (this.arpRefreshTimer || EWELINK_ARP_REFRESH_INTERVAL_MS <= 0) return;
+
+        this.arpRefreshTimer = setInterval(async () => {
+            await this.reloadArpTable();
+            this.publishOnlineStatusFromArp();
+        }, EWELINK_ARP_REFRESH_INTERVAL_MS);
+
+        if (this.arpRefreshTimer.unref) this.arpRefreshTimer.unref();
+    }
+
+    setOnlineStatus(deviceId, online) {
+        const previous = this.onlineByDeviceId.get(deviceId);
+        this.onlineByDeviceId.set(deviceId, online);
+        if (previous !== online) {
+            this.emit('availabilityChange', {
+                deviceId,
+                available: online ? 'online' : 'offline'
+            });
         }
     }
 
@@ -140,7 +188,7 @@ class EwelinkManager extends EventEmitter {
                 mac: item.extra?.extra?.staMac || 'N/A',
                 ip: this.getIP(item) || 'N/A',
                 modelo: item.extra?.extra?.model || 'N/A',
-                online: item.online,
+                online: this.onlineByDeviceId.get(item.deviceid) ?? this.isDeviceOnline(item),
                 estado: item.params?.switch || item.params?.switches?.[0]?.switch || 'unknown'
             };
         });
@@ -155,13 +203,19 @@ class EwelinkManager extends EventEmitter {
 
     async setPowerState(deviceId, state) {
         const equipo = this.devicesCache.find(d => d.deviceid === deviceId);
-        const ip = equipo ? this.getIP(equipo) : 'IP Desconocida';
+        let ip = equipo ? this.getIP(equipo) : null;
 
-        console.log(`[EwelinkManager] Comando: ${equipo?.name || deviceId} -> ${state} (IP: ${ip})`);
+        if (equipo && !ip) {
+            await this.reloadArpTable();
+            ip = this.getIP(equipo);
+            this.publishOnlineStatusFromArp();
+        }
+
+        console.log(`[EwelinkManager] Comando: ${equipo?.name || deviceId} -> ${state} (IP: ${ip || 'IP Desconocida'})`);
 
         // 1. Intentar LAN
         try {
-            if (ip === 'IP Desconocida') throw new Error('Dispositivo no encontrado en red local');
+            if (!ip) throw new Error('Dispositivo no encontrado en red local');
 
             const result = await this.connection.setDevicePowerState(deviceId, state);
             console.log(`[EwelinkManager] ✅ Control LAN exitoso para ${deviceId}`);
@@ -195,6 +249,7 @@ class EwelinkManager extends EventEmitter {
 
                 const cacheDevice = this.devicesCache.find(d => d.deviceid === deviceId);
                 if (!cacheDevice) return;
+                this.setOnlineStatus(deviceId, true);
 
                 const deviceKey = cacheDevice.devicekey;
                 if (!deviceKey) return;
@@ -221,6 +276,9 @@ class EwelinkManager extends EventEmitter {
                     }
 
                     if (switchState) {
+                        const currentState = (cacheDevice.params?.switch || cacheDevice.params?.switches?.[0]?.switch || '').toLowerCase();
+                        if (currentState === switchState) return;
+
                         // Actualizar estado en la caché en memoria
                         if (cacheDevice.params) {
                             if (cacheDevice.params.switch) cacheDevice.params.switch = switchState;
@@ -243,6 +301,10 @@ class EwelinkManager extends EventEmitter {
 
             browser.on('up', handleService);
             browser.on('txt-update', handleService);
+            browser.on('down', (service) => {
+                const deviceId = service.txt?.id || service.name?.split('_')?.[1];
+                if (deviceId) this.setOnlineStatus(deviceId, false);
+            });
 
             console.log('📡 [EwelinkManager] Escáner mDNS iniciado (escuchando cambios físicos locales eWelink)');
         } catch (error) {

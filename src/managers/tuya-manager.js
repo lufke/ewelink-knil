@@ -26,6 +26,7 @@ class TuyaManager extends EventEmitter {
                 this.devices = JSON.parse(data).map(d => ({
                     ...d,
                     estado: 'UNKNOWN', // Estado inicial
+                    online: false,
                     source: 'tuya'
                 }));
                 console.log(`🔌 [TuyaManager] Cargados ${this.devices.length} dispositivos desde tuya-devices.json`);
@@ -76,10 +77,12 @@ class TuyaManager extends EventEmitter {
             device.on('connected', () => {
                 console.log(`✅ [TuyaManager TCP] Conectado a ${name} (${device.device.ip})`);
                 devConfig.ip = device.device.ip;
+                this.setPhysicalDeviceOnline(devConfig.id, true, device.device.ip);
             });
 
             device.on('disconnected', () => {
                 console.log(`❌ [TuyaManager TCP] Desconectado de ${name}. Reintentando en 10s...`);
+                this.setPhysicalDeviceOnline(devConfig.id, false);
                 setTimeout(connectDevice, 10000);
             });
 
@@ -97,8 +100,10 @@ class TuyaManager extends EventEmitter {
                             const newStateVal = data.dps[channelDps];
                             if (newStateVal !== undefined) {
                                 const stateStr = newStateVal ? 'ON' : 'OFF';
-                                if (dev.estado !== stateStr) {
-                                    dev.estado = stateStr;
+                                const previousState = dev.estado;
+                                dev.estado = stateStr;
+
+                                if (previousState !== 'UNKNOWN' && previousState !== stateStr) {
                                     console.log(`🔌 [TuyaManager TCP] Detectado cambio físico en ${dev.nombre || dev.id} (DPS ${channelDps}): ${stateStr}`);
                                     const botId = `${dev.id}_${channelDps}`;
                                     this.emit('stateChange', {
@@ -125,6 +130,26 @@ class TuyaManager extends EventEmitter {
         });
     }
 
+    setPhysicalDeviceOnline(deviceId, online, ip = null) {
+        this.devices.forEach(dev => {
+            if (dev.id !== deviceId) return;
+
+            const previous = dev.online;
+            dev.online = online;
+            if (ip) dev.ip = ip;
+
+            if (previous !== online) {
+                const botId = `${dev.id}_${dev.dps || 1}`;
+                this.emit('availabilityChange', {
+                    botId,
+                    deviceId: dev.id,
+                    dps: dev.dps || 1,
+                    available: online ? 'online' : 'offline'
+                });
+            }
+        });
+    }
+
     getEquipos() {
         return this.devices
             .filter(d => !d.id.startsWith('ejemplo_'))
@@ -140,7 +165,7 @@ class TuyaManager extends EventEmitter {
                     ip: d.ip || 'N/A',
                     mac: d.mac || 'N/A',
                     modelo: d.modelo || d.model || 'Tuya Switch',
-                    online: d.estado !== 'UNKNOWN',
+                    online: Boolean(d.online),
                     estado: d.estado ? d.estado.toLowerCase() : 'unknown'
                 };
             });
@@ -206,4 +231,3 @@ class TuyaManager extends EventEmitter {
 
 const manager = new TuyaManager();
 export default manager;
-
