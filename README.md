@@ -6,7 +6,7 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
 
 - **Gestor eWelink (LAN + Cloud):** Control primario vía red local (Zeroconf/ARP). Si el dispositivo no responde en LAN, hace *fallback* automático a la nube.
 - **Integración Tasmota:** Descubrimiento enriquecido mediante el tópico nativo `tasmota/discovery/+/config` (nombre real, IP, modelo, firmware) y seguimiento de estado en tiempo real vía `tele/+/LWT`, `stat/+/POWER` y `tele/+/STATE`.
-- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS).
+- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS). Detecta automáticamente cambios de IP por DHCP tras cortes de suministro mediante descubrimiento UDP y persiste la IP actualizada en `tuya-devices.json`.
 - **Tópicos MQTT unificados:** Todos los dispositivos (sin importar la marca) quedan disponibles bajo el prefijo `luces/<id>/`.
 
 ## 📋 Requisitos

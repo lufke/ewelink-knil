@@ -40,6 +40,19 @@ class TuyaManager extends EventEmitter {
         }
     }
 
+    saveConfig() {
+        try {
+            const data = this.devices.map(d => {
+                const { estado, source, ...rest } = d;
+                return rest;
+            });
+            fs.writeFileSync(this.configPath, JSON.stringify(data, null, 2));
+            console.log('💾 [TuyaManager] Configuración guardada en tuya-devices.json');
+        } catch (err) {
+            console.error('❌ [TuyaManager] Error guardando configuración:', err.message);
+        }
+    }
+
     startTcpConnections() {
         // Agrupar dispositivos por su ID físico único
         const uniqueDevices = [];
@@ -69,13 +82,30 @@ class TuyaManager extends EventEmitter {
                     await device.connect();
                 } catch (err) {
                     console.warn(`⚠️ [TuyaManager TCP] Error conectando a ${name}: ${err.message}. Reintentando en 15s...`);
+                    // Si la IP estática falló, intentar descubrimiento UDP para detectar cambio de IP
+                    if (devConfig.ip) {
+                        try {
+                            console.log(`🔍 [TuyaManager TCP] Intentando descubrir ${name} por UDP...`);
+                            await device.find({ timeout: 15 });
+                            if (device.device && device.device.ip && device.device.ip !== devConfig.ip) {
+                                console.log(`✅ [TuyaManager TCP] ${name} encontrado en nueva IP: ${device.device.ip}`);
+                                devConfig.ip = device.device.ip;
+                                this.saveConfig();
+                            }
+                        } catch (findErr) {
+                            console.warn(`⚠️ [TuyaManager TCP] No se pudo descubrir ${name} por UDP: ${findErr.message}`);
+                        }
+                    }
                     setTimeout(connectDevice, 15000);
                 }
             };
 
             device.on('connected', () => {
                 console.log(`✅ [TuyaManager TCP] Conectado a ${name} (${device.device.ip})`);
-                devConfig.ip = device.device.ip;
+                if (device.device.ip && device.device.ip !== devConfig.ip) {
+                    devConfig.ip = device.device.ip;
+                    this.saveConfig();
+                }
             });
 
             device.on('disconnected', () => {
@@ -195,6 +225,32 @@ class TuyaManager extends EventEmitter {
             console.log(`✅ [TuyaManager Fallback] ${name} cambiado a ${state}`);
             return { status: 'ok', state };
         } catch (err) {
+            // Si falló con IP estática, intentar descubrimiento UDP
+            if (devConfig.ip) {
+                try {
+                    console.log(`🔍 [TuyaManager Fallback] Intentando descubrir ${name} por UDP...`);
+                    const finder = new TuyAPI({
+                        id: devConfig.id,
+                        key: devConfig.key,
+                        version: devConfig.version || '3.4'
+                    });
+                    await finder.find({ timeout: 15 });
+                    if (finder.device && finder.device.ip) {
+                        console.log(`✅ [TuyaManager Fallback] ${name} encontrado en IP: ${finder.device.ip}`);
+                        devConfig.ip = finder.device.ip;
+                        this.saveConfig();
+                        await finder.connect();
+                        await finder.set({ dps: dps, set: value });
+                        await finder.disconnect();
+                        devConfig.estado = state.toUpperCase();
+                        console.log(`✅ [TuyaManager Fallback] ${name} cambiado a ${state} tras descubrimiento`);
+                        return { status: 'ok', state };
+                    }
+                    await finder.disconnect().catch(() => {});
+                } catch (findErr) {
+                    console.error(`❌ [TuyaManager Fallback] Error en descubrimiento UDP para ${name}:`, findErr.message);
+                }
+            }
             console.error(`❌ [TuyaManager Fallback] Error controlando dispositivo ${name}:`, err.message);
             try {
                 await device.disconnect();
