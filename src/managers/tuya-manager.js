@@ -83,7 +83,6 @@ class TuyaManager extends EventEmitter {
         if (timer.unref) timer.unref();
         this.reconnectTimers.set(deviceId, timer);
     }
-
     startTcpConnections() {
         // Agrupar dispositivos por su ID físico único
         const uniqueDevices = [];
