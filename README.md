@@ -6,7 +6,7 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
 
 - **Gestor eWelink (LAN + Cloud):** Control primario vía red local (Zeroconf/ARP). Al iniciar recarga la tabla ARP para resolver IPs nuevas después de cortes de luz y la refresca periódicamente. Si el dispositivo no responde en LAN, hace *fallback* automático a la nube con timeout configurable para no bloquear si no hay Internet.
 - **Integración Tasmota:** Descubrimiento enriquecido mediante el tópico nativo `tasmota/discovery/+/config` (nombre real, IP, modelo, firmware) y seguimiento de estado en tiempo real vía `tele/+/LWT`, `stat/+/POWER` y `tele/+/STATE`.
-- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS), conexión persistente, disponibilidad `online/offline` y redescubrimiento de IP por UDP cuando cambia la red.
+- **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS), conexión TCP persistente, disponibilidad `online/offline` y redescubrimiento de IP por UDP ante cambios de red. La IP descubierta se persiste automáticamente en `tuya-devices.json`.
 - **Estados físicos reales:** eWelink y Tuya publican `state` solo cuando se detecta un cambio físico real. Los comandos MQTT no se republcan como estado confirmado.
 - **Refresco manual por MQTT:** Permite solicitar recarga de ARP eWelink y redescubrimiento Tuya desde cualquier cliente MQTT después de cortes de luz o cambios de IP.
 - **Tópicos MQTT unificados:** Todos los dispositivos (sin importar la marca) quedan disponibles bajo el prefijo `luces/<id>/`.
@@ -44,7 +44,7 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
    EWELINK_CLOUD_TIMEOUT_MS=7000
    ```
 
-3. Configura tus dispositivos Tuya en `tuya-devices.json` (ver ejemplo en `.env.example`). Para obtener las llaves locales:
+3. Configura tus dispositivos Tuya en `tuya-devices.json`. Para obtener las llaves locales:
    ```bash
    npx @tuyapi/cli wizard
    ```
@@ -92,6 +92,17 @@ Todos los dispositivos quedan accesibles bajo el prefijo `luces/`:
 | `luces/_bridge/refresh` | Escritura | Solicita refresco manual (`arp`, `ewelink`, `tuya` o `all`) |
 | `luces/_bridge/refresh/status` | Lectura | Resultado JSON del último refresco manual |
 
+### Redescubrimiento automático Tuya
+
+El gestor Tuya mantiene una conexión TCP persistente con cada dispositivo. Cuando falla (corte de luz, cambio de IP por DHCP):
+
+1. Detecta el error de conexión (`ECONNREFUSED`, timeout, etc.)
+2. Crea una instancia temporal de `tuyapi` **sin IP** para forzar un broadcast UDP real (la librería salta el discovery si ya tiene IP)
+3. Si descubre una IP nueva, la actualiza en memoria y la persiste en `tuya-devices.json`
+4. Reintenta la conexión TCP con la IP descubierta
+
+Esto también se ejecuta bajo demanda enviando `tuya` o `all` al tópico `luces/_bridge/refresh`.
+
 ### Estado vs disponibilidad
 
 - `luces/<id>/state` se publica cuando el bridge detecta un cambio real del equipo: mDNS/local para eWelink, TCP persistente para Tuya y `stat/+/POWER` para Tasmota.
@@ -121,7 +132,7 @@ Payloads aceptados:
 |---------|--------|
 | `arp` | Recarga la tabla ARP eWelink y recalcula disponibilidad |
 | `ewelink` | Alias de `arp` |
-| `tuya` | Redescubre IPs Tuya por UDP, actualiza disponibilidad y persiste IPs nuevas en `tuya-devices.json` |
+| `tuya` | Redescubre IPs Tuya por UDP (creando instancia temporal sin IP para forzar broadcast), actualiza disponibilidad y persiste IPs nuevas en `tuya-devices.json` |
 | `all` | Ejecuta refresco eWelink/ARP y redescubrimiento Tuya |
 
 El bridge responde en `luces/_bridge/refresh/status` con un JSON como:
