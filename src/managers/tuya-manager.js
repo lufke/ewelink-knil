@@ -202,12 +202,6 @@ class TuyaManager extends EventEmitter {
             const persistentDevice = this.connections.get(devConfig.id);
 
             try {
-                if (persistentDevice?.isConnected()) {
-                    this.setPhysicalDeviceOnline(devConfig.id, true, persistentDevice.device?.ip);
-                    results.push({ id: devConfig.id, name, status: 'online', ip: persistentDevice.device?.ip || devConfig.ip || null });
-                    continue;
-                }
-
                 const device = persistentDevice || new TuyAPI({
                     id: devConfig.id,
                     key: devConfig.key,
@@ -218,9 +212,16 @@ class TuyaManager extends EventEmitter {
 
                 await device.find({ timeout: 10 });
                 const discoveredIp = device.device?.ip;
-                if (discoveredIp) {
+                if (discoveredIp && discoveredIp !== devConfig.ip) {
+                    console.log(`🔎 [TuyaManager] ${name} IP cambiada: ${devConfig.ip || 'N/A'} -> ${discoveredIp}`);
                     devConfig.ip = discoveredIp;
                     this.updateDeviceIp(devConfig.id, discoveredIp);
+                }
+
+                if (persistentDevice?.isConnected()) {
+                    this.setPhysicalDeviceOnline(devConfig.id, true, discoveredIp || devConfig.ip);
+                    results.push({ id: devConfig.id, name, status: 'online', ip: discoveredIp || devConfig.ip || null });
+                    continue;
                 }
 
                 const connectDevice = this.connectHandlers.get(devConfig.id);
