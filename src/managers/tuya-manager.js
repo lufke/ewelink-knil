@@ -120,7 +120,7 @@ class TuyaManager extends EventEmitter {
                         });
                         await finder.find({ timeout: 10 });
                         const discoveredIp = finder.device?.ip;
-                        await finder.disconnect().catch(() => {});
+                        try { await finder.disconnect(); } catch (e) {}
                         if (discoveredIp) {
                             console.log(`🔎 [TuyaManager TCP] ${name} redescubierto en ${discoveredIp}`);
                             devConfig.ip = discoveredIp;
@@ -216,7 +216,7 @@ class TuyaManager extends EventEmitter {
                 });
                 await finder.find({ timeout: 10 });
                 const discoveredIp = finder.device?.ip;
-                await finder.disconnect().catch(() => {});
+                try { await finder.disconnect(); } catch (e) {}
                 if (discoveredIp && discoveredIp !== devConfig.ip) {
                     console.log(`🔎 [TuyaManager] ${name} IP cambiada: ${devConfig.ip || 'N/A'} -> ${discoveredIp}`);
                     devConfig.ip = discoveredIp;
@@ -342,7 +342,7 @@ class TuyaManager extends EventEmitter {
                 });
                 await finder.find({ timeout: 10 });
                 const discoveredIp = finder.device?.ip;
-                await finder.disconnect().catch(() => {});
+                try { await finder.disconnect(); } catch (e) {}
                 if (discoveredIp) {
                     devConfig.ip = discoveredIp;
                     this.updateDeviceIp(devConfig.id, discoveredIp);
