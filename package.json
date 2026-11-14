@@ -6,8 +6,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon --ignore arp-table.json --ignore devices-cache.json --ignore tasmota-devices.json src/mqtt-bridge.js",
+    "dev": "nodemon --ignore arp-table.json --ignore devices-cache.json --ignore tasmota-devices.json --ignore cozylife-devices.json src/mqtt-bridge.js",
     "start": "node src/mqtt-bridge.js",
+    "devices": "node scripts/devices.js",
     "tasmota": "node scripts/tasmota-control.js",
     "tasmota:discovery": "node scripts/tasmota-discovery.js",
     "cache": "node scripts/create-cache.js"

@@ -8,7 +8,8 @@ Un puente IoT en Node.js que expone dispositivos **eWelink** (Sonoff, etc.), **T
 - **Integración Tasmota:** Descubrimiento enriquecido mediante el tópico nativo `tasmota/discovery/+/config` (nombre real, IP, modelo, firmware) y seguimiento de estado en tiempo real vía `tele/+/LWT`, `stat/+/POWER` y `tele/+/STATE`.
 - **Integración Tuya (Control Local):** Control local de dispositivos Tuya mediante `tuyapi`, con soporte para múltiples canales (DPS), conexión TCP persistente, disponibilidad `online/offline` y redescubrimiento de IP por UDP ante cambios de red. La IP descubierta se persiste automáticamente en `tuya-devices.json`.
 - **Estados físicos reales:** eWelink y Tuya publican `state` solo cuando se detecta un cambio físico real. Los comandos MQTT no se republcan como estado confirmado.
-- **Refresco manual por MQTT:** Permite solicitar recarga de ARP eWelink y redescubrimiento Tuya desde cualquier cliente MQTT después de cortes de luz o cambios de IP.
+- **CozyLife local:** Descubrimiento por UDP/6095, conexión TCP persistente al puerto 5555, estado por CMD 2/CMD 10 y control CMD 3 para DPID 1.
+- **Refresco manual por MQTT:** Permite solicitar recarga de ARP eWelink y redescubrimiento Tuya y CozyLife desde cualquier cliente MQTT después de cortes de luz o cambios de IP.
 - **Tópicos MQTT unificados:** Todos los dispositivos (sin importar la marca) quedan disponibles bajo el prefijo `luces/<id>/`.
 
 ## 📋 Requisitos
@@ -66,6 +67,36 @@ npm run dev
 npm run start
 ```
 
+### Administración local de dispositivos
+
+Al iniciar el bridge se habilita una interfaz local en `http://127.0.0.1:8765`.
+Desde ella puedes consultar el inventario, descubrir CozyLife, agregar o quitar
+equipos CozyLife, y controlar dispositivos. La API escucha en loopback por
+defecto; define `ADMIN_HOST` solo si necesitas acceder desde otro equipo.
+Usa `ADMIN_ENABLED=false` para desactivar esta interfaz.
+
+La CLI se conecta a la misma API, por lo que requiere que el bridge esté activo:
+
+```bash
+npm run devices -- discover
+npm run devices -- list
+npm run devices -- add cozylife <id> [nombre]
+npm run devices -- remove cozylife <id>
+npm run devices -- refresh [ewelink|tuya|tasmota|cozylife|all]
+npm run devices -- on <fabricante> <id>
+npm run devices -- off <fabricante> <id>
+```
+
+Los dispositivos CozyLife descubiertos se muestran antes de agregarlos. El
+registro local se guarda en `cozylife-devices.json`, excluido de Git.
+
+CozyLife usa broadcast UDP al puerto 6095 y TCP persistente al puerto 5555.
+El manager envía CMD 2 con `attr:[1]` para consultar, CMD 3 con
+`attr:[1]` y DPID 1 para controlar, y procesa las notificaciones CMD 10.
+DPID 1 se traduce de 0/1 a off/on; DPID 2 se conserva sin asignarle
+significado. Los tópicos MQTT siguen el formato común
+`luces/<id>/state|set|available|config`.
+
 ### Producción con PM2 (recomendado en Raspberry Pi)
 ```bash
 # Instalar PM2 globalmente si no lo tienes
@@ -89,7 +120,7 @@ Todos los dispositivos quedan accesibles bajo el prefijo `luces/`:
 | `luces/<id>/state` | Lectura | Estado físico real (`on` / `off`) — retenido |
 | `luces/<id>/available` | Lectura | Disponibilidad (`online` / `offline`) — retenido |
 | `luces/<id>/config` | Lectura | Metadatos del dispositivo en JSON — retenido |
-| `luces/_bridge/refresh` | Escritura | Solicita refresco manual (`arp`, `ewelink`, `tuya` o `all`) |
+| `luces/_bridge/refresh` | Escritura | Solicita refresco manual (`arp`, `ewelink`, `tuya`, `cozylife` o `all`) |
 | `luces/_bridge/refresh/status` | Lectura | Resultado JSON del último refresco manual |
 
 ### Redescubrimiento automático Tuya
@@ -133,7 +164,8 @@ Payloads aceptados:
 | `arp` | Recarga la tabla ARP eWelink y recalcula disponibilidad |
 | `ewelink` | Alias de `arp` |
 | `tuya` | Redescubre IPs Tuya por UDP (creando instancia temporal sin IP para forzar broadcast), actualiza disponibilidad y persiste IPs nuevas en `tuya-devices.json` |
-| `all` | Ejecuta refresco eWelink/ARP y redescubrimiento Tuya |
+| `cozylife` | Envía broadcast UDP de descubrimiento a CozyLife |
+| `all` | Ejecuta refresco eWelink/ARP y redescubrimiento Tuya y CozyLife |
 
 El bridge responde en `luces/_bridge/refresh/status` con un JSON como:
 
@@ -180,16 +212,22 @@ El manager también escucha los tópicos propios de Tasmota para obtener datos r
 ewelink-knil/
 ├── src/
 │   ├── mqtt-bridge.js          ← Entry point principal
+│   ├── device-registry.js      ← Inventario y enrutamiento común
+│   ├── admin-server.js         ← API local para CLI y web
+│   ├── admin/                  ← Interfaz web local
 │   └── managers/
 │       ├── ewelink-manager.js  ← Control eWelink (LAN + Cloud)
 │       ├── tuya-manager.js     ← Control local Tuya
-│       └── tasmota-manager.js  ← Descubrimiento y control Tasmota
+│       ├── tasmota-manager.js  ← Descubrimiento y control Tasmota
+│       └── cozylife-manager.js ← Descubrimiento y control CozyLife local
 ├── scripts/
 │   ├── create-cache.js         ← Genera/refresca devices-cache.json y arp-table.json
+│   ├── devices.js              ← Administración CLI
 │   ├── tasmota-control.js      ← Prueba manual de control Tasmota
 │   └── tasmota-discovery.js    ← Descubrimiento interactivo de Tasmota
 ├── archive/                    ← Código legacy (no se ejecuta)
 ├── tuya-devices.json           ← Config Tuya (excluido de git)
+├── cozylife-devices.json       ← Dispositivos CozyLife administrados (excluido de git)
 ├── devices-cache.json          ← Caché eWelink (excluido de git, auto-generado)
 ├── arp-table.json              ← Tabla ARP local (excluido de git, auto-generado)
 ├── ecosystem.config.cjs        ← Configuración PM2
@@ -202,6 +240,7 @@ ewelink-knil/
 |---------|-------------|
 | `npm run dev` | Inicia el bridge con nodemon (recarga en cambios) |
 | `npm run start` | Inicia el bridge directamente con Node |
+| `npm run devices -- <comando>` | Descubre y administra dispositivos por consola |
 | `npm run cache` | Regenera la caché de dispositivos eWelink y la tabla ARP |
 | `npm run tasmota` | Prueba control manual de un dispositivo Tasmota |
 | `npm run tasmota:discovery` | Modo interactivo de descubrimiento Tasmota |

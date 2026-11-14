@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ewelink-knil · Dispositivos</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><p class="eyebrow">ewelink-knil</p><h1>Administración de dispositivos</h1></div>
+      <button id="discover">Buscar CozyLife</button>
+    </header>
+    <p id="message" role="status">Cargando inventario…</p>
+    <section>
+      <div class="section-heading"><h2>Registrados</h2><button class="secondary" id="refresh">Actualizar estados</button></div>
+      <div id="devices" class="grid" aria-live="polite"></div>
+    </section>
+    <section>
+      <div class="section-heading"><h2>Detectados en la red</h2><span>Los equipos CozyLife se agregan de forma explícita.</span></div>
+      <div id="discovered" class="grid" aria-live="polite"></div>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
