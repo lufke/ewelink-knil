@@ -46,6 +46,12 @@ export class DeviceRegistry {
         return manager.removeDevice(id);
     }
 
+    async rename(source, id, name) {
+        const manager = this.managers[source];
+        if (!manager?.renameDevice) throw new Error(`No se admite cambiar el nombre para ${source || 'ese fabricante'}.`);
+        return manager.renameDevice(id, name);
+    }
+
     async setPowerState(source, id, state) {
         if (!['on', 'off'].includes(state)) throw new Error('El estado debe ser on u off.');
         const manager = this.managers[source];

@@ -55,6 +55,12 @@ export function startAdminServer(registry, options = {}) {
                 });
             }
             const deviceMatch = url.pathname.match(/^\/api\/devices\/([^/]+)$/);
+            if (request.method === 'PATCH' && deviceMatch) {
+                const { source = 'cozylife', name } = await readJson(request);
+                return sendJson(response, 200, {
+                    device: await registry.rename(source, decodeURIComponent(deviceMatch[1]), name)
+                });
+            }
             if (request.method === 'DELETE' && deviceMatch) {
                 const source = url.searchParams.get('source') || 'cozylife';
                 return sendJson(response, 200, {
