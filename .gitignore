@@ -4,3 +4,4 @@ arp-table.json
 devices-cache.json
 *.log
 tuya-devices.json
+cozylife-devices.json

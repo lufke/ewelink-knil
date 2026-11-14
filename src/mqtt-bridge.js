@@ -2,6 +2,9 @@ import mqtt from 'mqtt';
 import ewelinkManager from './managers/ewelink-manager.js';
 import tuyaManager from './managers/tuya-manager.js';
 import tasmotaManager from './managers/tasmota-manager.js';
+import cozyLifeManager from './managers/cozylife-manager.js';
+import { DeviceRegistry } from './device-registry.js';
+import { startAdminServer } from './admin-server.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -10,6 +13,12 @@ const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://localhost';
 const MQTT_PREFIX = 'luces';
 const BRIDGE_REFRESH_TOPIC = `${MQTT_PREFIX}/_bridge/refresh`;
 const BRIDGE_REFRESH_STATUS_TOPIC = `${MQTT_PREFIX}/_bridge/refresh/status`;
+const deviceRegistry = new DeviceRegistry({
+    ewelink: ewelinkManager,
+    tuya: tuyaManager,
+    tasmota: tasmotaManager,
+    cozylife: cozyLifeManager
+});
 
 async function startBridge() {
     console.log('--- Iniciando Puente IoT Totalmente Unificado a MQTT ---');
@@ -24,6 +33,15 @@ async function startBridge() {
     const tasmotaInitialized = await tasmotaManager.init();
     if (!tasmotaInitialized) {
         console.warn('⚠️ No se pudo inicializar el manager de Tasmota.');
+    }
+
+    const cozyLifeInitialized = await cozyLifeManager.init();
+    if (!cozyLifeInitialized) {
+        console.warn('⚠️ No se pudo inicializar el manager CozyLife.');
+    }
+
+    if (process.env.ADMIN_ENABLED !== 'false') {
+        startAdminServer(deviceRegistry);
     }
 
     const client = mqtt.connect(MQTT_BROKER);
@@ -48,6 +66,24 @@ async function startBridge() {
     tuyaManager.on('availabilityChange', ({ botId, available }) => {
         client.publish(`${MQTT_PREFIX}/${botId}/available`, available, { retain: true });
         console.log(`[Puente Unificado] Tuya Local -> Disponibilidad [${botId}]: ${available}`);
+    });
+
+    cozyLifeManager.on('stateChange', ({ deviceId, state }) => {
+        client.publish(`${MQTT_PREFIX}/${deviceId}/state`, state, { retain: true });
+        console.log(`[Puente Unificado] CozyLife Local -> Estado [${deviceId}]: ${state}`);
+    });
+
+    cozyLifeManager.on('availabilityChange', ({ deviceId, available }) => {
+        client.publish(`${MQTT_PREFIX}/${deviceId}/available`, available, { retain: true });
+        console.log(`[Puente Unificado] CozyLife Local -> Disponibilidad [${deviceId}]: ${available}`);
+    });
+
+    cozyLifeManager.on('deviceAdded', device => publicarConfigCozyLife(client, device));
+    cozyLifeManager.on('deviceUpdated', device => publicarConfigCozyLife(client, device));
+    cozyLifeManager.on('deviceRemoved', ({ id }) => {
+        for (const suffix of ['state', 'available', 'config']) {
+            client.publish(`${MQTT_PREFIX}/${id}/${suffix}`, '', { retain: true });
+        }
     });
 
     client.on('connect', () => {
@@ -80,6 +116,7 @@ async function startBridge() {
         // Publicar config y disponibilidad inicial. El estado se publica solo ante cambios físicos reales.
         publicarEstadoEwelink(client);
         publicarEstadoTuya(client);
+        publicarEstadoCozyLife(client);
 
         // Imprimir directorio unificado en consola
         imprimirDirectorioConsola();
@@ -166,6 +203,21 @@ async function startBridge() {
             return;
         }
 
+        const esCozyLife = cozyLifeManager.getEquipos().some(device => device.id === deviceId);
+        if (esCozyLife) {
+            try {
+                const response = await cozyLifeManager.setPowerState(deviceId, payload);
+                if (response.status === 'ok') {
+                    console.log(`[Puente Unificado] OK -> CozyLife [${deviceId}] cambiado a ${payload}`);
+                } else {
+                    console.error(`[Puente Unificado] Error CozyLife [${deviceId}]:`, response);
+                }
+            } catch (error) {
+                console.error(`[Puente Unificado] Error controlando CozyLife [${deviceId}]:`, error.message);
+            }
+            return;
+        }
+
         // RUTA A: TASMOTA (Se asume por descarte)
         try {
             const response = await tasmotaManager.setPowerState(deviceId, payload);
@@ -187,11 +239,11 @@ async function startBridge() {
 
 async function refrescarDesdeMqtt(client, payload) {
     const command = payload.trim() || 'arp';
-    if (!['arp', 'ewelink', 'tuya', 'all'].includes(command)) {
+    if (!['arp', 'ewelink', 'tuya', 'cozylife', 'all'].includes(command)) {
         client.publish(BRIDGE_REFRESH_STATUS_TOPIC, JSON.stringify({
             status: 'error',
             command,
-            error: "Comando invalido. Usa 'arp', 'ewelink', 'tuya' o 'all'.",
+            error: "Comando invalido. Usa 'arp', 'ewelink', 'tuya', 'cozylife' o 'all'.",
             ts: new Date().toISOString()
         }));
         console.warn(`[Puente Unificado] Refresco manual inválido: ${command}`);
@@ -216,11 +268,17 @@ async function refrescarDesdeMqtt(client, payload) {
             publicarEstadoTuya(client);
         }
 
+        if (command === 'cozylife' || command === 'all') {
+            response.cozylife = await cozyLifeManager.refreshDiscovery();
+            publicarEstadoCozyLife(client);
+        }
+
         client.publish(BRIDGE_REFRESH_STATUS_TOPIC, JSON.stringify(response));
 
         const ewelinkSummary = response.ewelink ? ` eWelink=${response.ewelink.online}/${response.ewelink.devices}` : '';
         const tuyaSummary = response.tuya ? ` Tuya=${response.tuya.online}/${response.tuya.devices}` : '';
-        console.log(`[Puente Unificado] Refresco manual OK:${ewelinkSummary}${tuyaSummary}`);
+        const cozySummary = response.cozylife ? ` CozyLife=${response.cozylife.devices}` : '';
+        console.log(`[Puente Unificado] Refresco manual OK:${ewelinkSummary}${tuyaSummary}${cozySummary}`);
     } catch (error) {
         client.publish(BRIDGE_REFRESH_STATUS_TOPIC, JSON.stringify({
             status: 'error',
@@ -252,6 +310,15 @@ function publicarEstadoTuya(client) {
  * Parsea el payload de tasmota/discovery/<mac>/config y publica
  * un objeto de config limpio en luces/<topic>/config.
  */
+function publicarEstadoCozyLife(client) {
+    cozyLifeManager.getEquipos().forEach(device => publicarConfigCozyLife(client, device));
+}
+
+function publicarConfigCozyLife(client, device) {
+    client.publish(`${MQTT_PREFIX}/${device.id}/available`, device.online ? 'online' : 'offline', { retain: true });
+    client.publish(`${MQTT_PREFIX}/${device.id}/config`, JSON.stringify(device), { retain: true });
+}
+
 function publicarConfigTasmota(client, rawMessage) {
     try {
         const data = JSON.parse(rawMessage);
@@ -282,6 +349,13 @@ function publicarConfigTasmota(client, rawMessage) {
 function imprimirDirectorioConsola() {
     const equiposEwelink = ewelinkManager.getEquipos();
     const equiposTuya = tuyaManager.getEquipos();
+    const equiposCozyLife = cozyLifeManager.getEquipos();
+
+    console.log('CozyLife registrados:');
+    if (equiposCozyLife.length === 0) console.log('  (ninguno; npm run devices -- discover)');
+    for (const device of equiposCozyLife) {
+        console.log(`  - ${device.nombre} [${device.id}] ${device.ip}: luces/${device.id}/set`);
+    }
 
     console.log('\n========================================================================');
     console.log('📋 DIRECTORIO UNIFICADO DE DISPOSITIVOS DISPONIBLES EN MQTT');
