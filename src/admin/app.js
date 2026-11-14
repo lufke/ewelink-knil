@@ -2,6 +2,12 @@ const registered = document.querySelector('#devices');
 const discovered = document.querySelector('#discovered');
 const message = document.querySelector('#message');
 const discoverButton = document.querySelector('#discover');
+const addDialog = document.querySelector('#add-dialog');
+const addForm = document.querySelector('#add-form');
+const addName = document.querySelector('#add-name');
+const addDeviceDetails = document.querySelector('#add-dialog-device');
+const confirmAdd = document.querySelector('#confirm-add');
+let pendingDevice = null;
 
 async function request(url, options = {}) {
   const response = await fetch(url, { headers: { 'content-type': 'application/json' }, ...options });
@@ -16,6 +22,26 @@ function empty(container, text) {
   note.textContent = text;
   container.append(note);
 }
+
+document.querySelector('#cancel-add').addEventListener('click', () => addDialog.close());
+addForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const name = addName.value.trim();
+  addName.setCustomValidity(name ? '' : 'Escribe un nombre para el dispositivo.');
+  if (!pendingDevice || !addForm.reportValidity()) return;
+  confirmAdd.disabled = true;
+  try {
+    await request('/api/devices', {
+      method: 'POST', body: JSON.stringify({ source: 'cozylife', id: pendingDevice.id, name })
+    });
+    addDialog.close();
+    message.textContent = `${name} agregado al inventario.`;
+    pendingDevice = null;
+    await load();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally { confirmAdd.disabled = false; }
+});
 
 function makeCard(device, isDiscovered = false) {
   const card = document.createElement('article');
@@ -45,14 +71,12 @@ function makeCard(device, isDiscovered = false) {
     add.textContent = device.configured ? 'Ya registrado' : 'Agregar';
     add.disabled = Boolean(device.configured);
     add.addEventListener('click', async () => {
-      add.disabled = true;
-      try {
-        await request('/api/devices', {
-          method: 'POST', body: JSON.stringify({ source: 'cozylife', id: device.id, name: device.id })
-        });
-        message.textContent = `${device.id} agregado al inventario.`;
-        await load();
-      } catch (error) { message.textContent = error.message; add.disabled = false; }
+      pendingDevice = device;
+      addDeviceDetails.textContent = `ID: ${device.id}${device.ip ? ` · IP: ${device.ip}` : ''}`;
+      addName.value = device.nombre || device.id;
+      addDialog.showModal();
+      addName.focus();
+      addName.select();
     });
     actions.append(add);
   } else {

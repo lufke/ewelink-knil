@@ -24,4 +24,11 @@ h3 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
 .details { margin: 13px 0; color: #657386; font-size: .86rem; line-height: 1.65; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .empty { color: #657386; padding: 8px 0; }
+dialog { width: min(440px, calc(100% - 32px)); border: 1px solid #dce3eb; border-radius: 14px; padding: 24px; color: #18212f; box-shadow: 0 18px 60px #14283c33; }
+dialog::backdrop { background: #10203380; }
+dialog h2 { margin-bottom: 8px; }
+dialog label { display: block; margin: 16px 0 6px; font-weight: 650; }
+dialog input { width: 100%; border: 1px solid #c8d2de; border-radius: 8px; padding: 11px 12px; color: inherit; font: inherit; }
+dialog input:focus { outline: 2px solid #165dba; outline-offset: 1px; }
+.dialog-actions { justify-content: end; margin-top: 20px; }
 @media (max-width: 600px) { header, .section-heading { align-items: start; flex-direction: column; } }
