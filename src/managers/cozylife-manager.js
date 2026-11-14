@@ -187,6 +187,19 @@ export class CozyLifeManager extends EventEmitter {
         return this.toPublicDevice(device);
     }
 
+    renameDevice(id, name) {
+        const device = this.devices.get(id);
+        const normalizedName = typeof name === 'string' ? name.trim() : '';
+        if (!device) throw new Error(`El dispositivo CozyLife ${id} no está registrado.`);
+        if (!normalizedName) throw new Error('El nombre del dispositivo no puede estar vacío.');
+        device.nombre = normalizedName;
+        device.name = normalizedName;
+        this.saveDevices();
+        const updated = this.toPublicDevice(device);
+        this.emit('deviceUpdated', updated);
+        return updated;
+    }
+
     removeDevice(id) {
         const device = this.devices.get(id);
         if (!device) throw new Error(`El dispositivo CozyLife ${id} no está registrado.`);

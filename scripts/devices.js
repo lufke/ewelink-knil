@@ -46,6 +46,13 @@ try {
             `/api/devices/${encodeURIComponent(id)}?source=${encodeURIComponent(source)}`,
             { method: 'DELETE' }
         ), null, 2));
+    } else if (command === 'rename') {
+        const [source, id, ...nameParts] = args;
+        const name = nameParts.join(' ').trim();
+        if (!source || !id || !name) throw new Error('Uso: npm run devices -- rename cozylife <id> <nuevo nombre>');
+        console.log(JSON.stringify(await request(`/api/devices/${encodeURIComponent(id)}`, {
+            method: 'PATCH', body: JSON.stringify({ source, name })
+        }), null, 2));
     } else if (command === 'refresh') {
         console.log(JSON.stringify(await request('/api/refresh', {
             method: 'POST', body: JSON.stringify({ source: args[0] || 'all' })
@@ -58,7 +65,7 @@ try {
             body: JSON.stringify({ source, state: command })
         }), null, 2));
     } else {
-        throw new Error('Uso: npm run devices -- [list|discover [espera_ms]|add cozylife <id> [nombre]|remove cozylife <id>|refresh [fabricante]|on|off <fabricante> <id>]');
+        throw new Error('Uso: npm run devices -- [list|discover [espera_ms]|add cozylife <id> [nombre]|rename cozylife <id> <nuevo nombre>|remove cozylife <id>|refresh [fabricante]|on|off <fabricante> <id>]');
     }
 } catch (error) {
     console.error(`Administración no disponible en ${baseUrl}: ${error.message}`);

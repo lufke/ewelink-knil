@@ -8,6 +8,7 @@ const addName = document.querySelector('#add-name');
 const addDeviceDetails = document.querySelector('#add-dialog-device');
 const confirmAdd = document.querySelector('#confirm-add');
 let pendingDevice = null;
+let renamingDevice = false;
 
 async function request(url, options = {}) {
   const response = await fetch(url, { headers: { 'content-type': 'application/json' }, ...options });
@@ -31,17 +32,41 @@ addForm.addEventListener('submit', async event => {
   if (!pendingDevice || !addForm.reportValidity()) return;
   confirmAdd.disabled = true;
   try {
-    await request('/api/devices', {
-      method: 'POST', body: JSON.stringify({ source: 'cozylife', id: pendingDevice.id, name })
-    });
+    if (renamingDevice) {
+      await request(`/api/devices/${encodeURIComponent(pendingDevice.id)}`, {
+        method: 'PATCH', body: JSON.stringify({ source: 'cozylife', name })
+      });
+    } else {
+      await request('/api/devices', {
+        method: 'POST', body: JSON.stringify({ source: 'cozylife', id: pendingDevice.id, name })
+      });
+    }
     addDialog.close();
-    message.textContent = `${name} agregado al inventario.`;
+    message.textContent = renamingDevice
+      ? `Nombre del dispositivo actualizado a ${name}.`
+      : `${name} agregado al inventario.`;
     pendingDevice = null;
+    renamingDevice = false;
     await load();
   } catch (error) {
     message.textContent = error.message;
   } finally { confirmAdd.disabled = false; }
 });
+
+function openNameDialog(device, isRename = false) {
+  pendingDevice = device;
+  renamingDevice = isRename;
+  document.querySelector('#add-dialog-title').textContent = isRename
+    ? 'Cambiar nombre del dispositivo'
+    : 'Agregar dispositivo CozyLife';
+  confirmAdd.textContent = isRename ? 'Guardar nombre' : 'Agregar';
+  addDeviceDetails.textContent = `ID: ${device.id}${device.ip ? ` · IP: ${device.ip}` : ''}`;
+  addName.value = device.nombre || device.id;
+  addName.setCustomValidity('');
+  addDialog.showModal();
+  addName.focus();
+  addName.select();
+}
 
 function makeCard(device, isDiscovered = false) {
   const card = document.createElement('article');
@@ -71,12 +96,7 @@ function makeCard(device, isDiscovered = false) {
     add.textContent = device.configured ? 'Ya registrado' : 'Agregar';
     add.disabled = Boolean(device.configured);
     add.addEventListener('click', async () => {
-      pendingDevice = device;
-      addDeviceDetails.textContent = `ID: ${device.id}${device.ip ? ` · IP: ${device.ip}` : ''}`;
-      addName.value = device.nombre || device.id;
-      addDialog.showModal();
-      addName.focus();
-      addName.select();
+      openNameDialog(device);
     });
     actions.append(add);
   } else {
@@ -97,6 +117,12 @@ function makeCard(device, isDiscovered = false) {
       actions.append(button);
     }
     if (device.source === 'cozylife') {
+      const rename = document.createElement('button');
+      rename.className = 'secondary';
+      rename.textContent = 'Cambiar nombre';
+      rename.addEventListener('click', () => openNameDialog(device, true));
+      actions.append(rename);
+
       const remove = document.createElement('button');
       remove.className = 'danger';
       remove.textContent = 'Quitar';
