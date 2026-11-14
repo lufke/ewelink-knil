@@ -22,6 +22,18 @@
       <div id="discovered" class="grid" aria-live="polite"></div>
     </section>
   </main>
+  <dialog id="add-dialog" aria-labelledby="add-dialog-title">
+    <form id="add-form">
+      <h2 id="add-dialog-title">Agregar dispositivo CozyLife</h2>
+      <p id="add-dialog-device" class="details"></p>
+      <label for="add-name">Nombre del dispositivo</label>
+      <input id="add-name" name="name" type="text" maxlength="64" required autocomplete="off">
+      <div class="actions dialog-actions">
+        <button type="button" class="secondary" id="cancel-add">Cancelar</button>
+        <button type="submit" id="confirm-add">Agregar</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
