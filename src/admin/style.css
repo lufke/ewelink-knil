@@ -11,6 +11,13 @@ button { border: 0; border-radius: 9px; padding: 10px 14px; background: #165dba;
 button.secondary { background: #e7edf5; color: #1d344d; }
 button.danger { background: #fbe9e8; color: #a42f28; }
 button:disabled { opacity: .55; cursor: wait; }
+.power-toggle { display: grid; width: 42px; height: 42px; place-items: center; padding: 8px; border: 1px solid #d7e0ea; background: #f2f5f8; color: #758396; }
+.power-toggle svg { width: 24px; height: 24px; }
+.power-toggle.is-on { border-color: #f1d77e; background: #fff7d8; color: #d39b00; }
+.power-toggle.is-off { background: #edf1f5; color: #718096; }
+.power-toggle.is-unknown { background: #f1edfb; color: #7755ae; }
+.unknown-icon { font-size: 1.25rem; font-weight: 800; line-height: 1; }
+.power-toggle:focus-visible { outline: 3px solid #165dba; outline-offset: 2px; }
 #message { min-height: 24px; color: #536273; }
 section { margin-top: 30px; }
 .section-heading { margin-bottom: 12px; }
