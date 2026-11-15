@@ -75,10 +75,12 @@ export function startAdminServer(registry, options = {}) {
                 response.end(await readFile(path.join(PUBLIC_DIR, 'index.html')));
                 return;
             }
-            if (request.method === 'GET' && ['/app.js', '/style.css'].includes(url.pathname)) {
+            if (request.method === 'GET' && ['/app.js', '/style.css', '/favicon.svg'].includes(url.pathname)) {
                 const contentType = url.pathname.endsWith('.js')
                     ? 'text/javascript; charset=utf-8'
-                    : 'text/css; charset=utf-8';
+                    : url.pathname.endsWith('.css')
+                        ? 'text/css; charset=utf-8'
+                        : 'image/svg+xml';
                 response.writeHead(200, { 'content-type': contentType, 'cache-control': 'no-store' });
                 response.end(await readFile(path.join(PUBLIC_DIR, url.pathname.slice(1))));
                 return;

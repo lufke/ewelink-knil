@@ -68,6 +68,38 @@ function openNameDialog(device, isRename = false) {
   addName.select();
 }
 
+function setPowerIcon(button, state) {
+  button.replaceChildren();
+  button.classList.remove('is-on', 'is-off', 'is-unknown');
+  button.classList.add(`is-${state}`);
+  if (state === 'unknown') {
+    const unknown = document.createElement('span');
+    unknown.className = 'unknown-icon';
+    unknown.textContent = '?';
+    unknown.setAttribute('aria-hidden', 'true');
+    button.append(unknown);
+    button.setAttribute('aria-label', 'Estado indeterminado. Pulsa para encender');
+    button.title = 'Estado indeterminado · Pulsa para encender';
+    return;
+  }
+
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('aria-hidden', 'true');
+  const bulb = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  bulb.setAttribute('d', 'M9 18h6m-5 3h4m-2-19a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.3h6c0-1.1.4-1.8 1-2.3A7 7 0 0 0 12 2Z');
+  bulb.setAttribute('stroke', 'currentColor');
+  bulb.setAttribute('stroke-width', '1.8');
+  bulb.setAttribute('stroke-linecap', 'round');
+  bulb.setAttribute('stroke-linejoin', 'round');
+  if (state === 'on') bulb.setAttribute('fill', 'currentColor');
+  icon.append(bulb);
+  button.append(icon);
+  const action = state === 'on' ? 'apagar' : 'encender';
+  button.setAttribute('aria-label', `Ampolleta ${state === 'on' ? 'encendida' : 'apagada'}. Pulsa para ${action}`);
+  button.title = `Pulsa para ${action}`;
+}
+
 function makeCard(device, isDiscovered = false) {
   const card = document.createElement('article');
   const heading = document.createElement('div');
@@ -100,22 +132,28 @@ function makeCard(device, isDiscovered = false) {
     });
     actions.append(add);
   } else {
-    for (const [state, label] of [['on', 'Encender'], ['off', 'Apagar']]) {
-      const button = document.createElement('button');
-      button.className = 'secondary';
-      button.textContent = label;
-      button.addEventListener('click', async () => {
-        button.disabled = true;
-        try {
-          await request(`/api/devices/${encodeURIComponent(device.id)}/set`, {
-            method: 'POST', body: JSON.stringify({ source: device.source, state })
-          });
-          message.textContent = `Comando ${label.toLowerCase()} enviado a ${device.nombre}.`;
-        } catch (error) { message.textContent = error.message; }
-        finally { button.disabled = false; }
-      });
-      actions.append(button);
-    }
+    const currentState = ['on', 'off'].includes(String(device.estado).toLowerCase())
+      ? String(device.estado).toLowerCase()
+      : 'unknown';
+    const button = document.createElement('button');
+    button.className = 'power-toggle';
+    setPowerIcon(button, currentState);
+    button.addEventListener('click', async () => {
+      const targetState = currentState === 'on' ? 'off' : 'on';
+      button.disabled = true;
+      try {
+        await request(`/api/devices/${encodeURIComponent(device.id)}/set`, {
+          method: 'POST', body: JSON.stringify({ source: device.source, state: targetState })
+        });
+        message.textContent = `Comando ${targetState === 'on' ? 'encender' : 'apagar'} enviado a ${device.nombre}.`;
+        await new Promise(resolve => setTimeout(resolve, 800));
+        await load();
+      } catch (error) {
+        message.textContent = error.message;
+        button.disabled = false;
+      }
+    });
+    actions.append(button);
     if (device.source === 'cozylife') {
       const rename = document.createElement('button');
       rename.className = 'secondary';
